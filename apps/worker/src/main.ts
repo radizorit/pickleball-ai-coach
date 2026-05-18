@@ -1,3 +1,5 @@
+import "./boot-env.js";
+
 import { createDb } from "@pickleball/db";
 
 import { claimAndProcessOne } from "./process-one.js";

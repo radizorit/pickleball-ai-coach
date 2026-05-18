@@ -73,7 +73,12 @@ export interface VideoDTO {
   updatedAt: string;
 }
 
-/** `POST /v1/videos/:id/presign` — row is `uploading` before browser PUT completes. */
+/** Short-lived signed GET for private media (`GET /v1/videos/:id/read-url`). */
+export interface VideoPresignedReadDTO {
+  url: string;
+  expiresAt: string;
+}
+
 export interface VideoPresignedUploadDTO {
   upload: {
     method: "PUT";

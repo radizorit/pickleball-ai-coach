@@ -68,6 +68,9 @@ importers:
       class-validator:
         specifier: ^0.14.1
         version: 0.14.4
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
       helmet:
         specifier: ^8.0.0
         version: 8.1.0
@@ -202,6 +205,9 @@ importers:
       '@pickleball/db':
         specifier: workspace:*
         version: link:../../packages/db
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
       zod:
         specifier: ^3.24.1
         version: 3.25.76

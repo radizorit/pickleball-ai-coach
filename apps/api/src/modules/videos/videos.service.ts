@@ -1,7 +1,7 @@
 import type { Video } from "@pickleball/db/schema";
 import { and, desc, eq, getDb, isNull, sql } from "@pickleball/db";
-import type { VideoDTO, VideoPresignedUploadDTO } from "@pickleball/shared";
-import type { AcceptedVideoMimeType } from "@pickleball/shared/constants";
+import type { VideoDTO, VideoPresignedReadDTO, VideoPresignedUploadDTO } from "@pickleball/shared";
+import type { AcceptedVideoMimeType, VideoReadAsset } from "@pickleball/shared/constants";
 import { DEFAULT_MAX_VIDEO_UPLOAD_BYTES } from "@pickleball/shared/constants";
 import type { CreateVideoBody, PresignVideoUploadBody } from "@pickleball/shared/zod";
 import {
@@ -244,5 +244,65 @@ export class VideosService {
       throw new BadRequestException("Could not finalize upload");
     }
     return toVideoDTO(updated);
+  }
+
+  async presignReadForUser(
+    auth: AuthContext,
+    videoId: string,
+    asset: VideoReadAsset,
+  ): Promise<VideoPresignedReadDTO> {
+    if (!this.objectStorage.isUploadConfigured()) {
+      throw new ServiceUnavailableException(
+        "Object storage is not configured (set S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and S3_REGION or S3_ENDPOINT).",
+      );
+    }
+
+    const env = loadEnv();
+    const expiresSeconds = env.PRESIGNED_READ_EXPIRES_SECONDS;
+
+    const userId = await this.users.resolveDbUserId(auth);
+    const db = getDb();
+    const [row] = await db
+      .select()
+      .from(videos)
+      .where(and(eq(videos.id, videoId), eq(videos.userId, userId), isNull(videos.deletedAt)))
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException("Video not found");
+    }
+
+    if (asset === "thumbnail") {
+      if (!row.thumbnailObjectKey || row.processingStatus !== "ready") {
+        throw new ConflictException("Poster is not available yet.");
+      }
+      const signed = await this.objectStorage.presignGet({
+        objectKey: row.thumbnailObjectKey,
+        expiresInSeconds: expiresSeconds,
+        responseContentType: "image/jpeg",
+      });
+      return { url: signed.url, expiresAt: signed.expiresAt };
+    }
+
+    const sourceOk =
+      row.processingStatus === "uploaded" ||
+      row.processingStatus === "processing" ||
+      row.processingStatus === "ready" ||
+      row.processingStatus === "failed";
+    if (!sourceOk) {
+      throw new ConflictException("Video file is not available for playback yet.");
+    }
+    if (!row.storageObjectKey) {
+      throw new BadRequestException("Video object is missing.");
+    }
+
+    const responseContentType =
+      row.contentType && row.contentType.length > 0 ? row.contentType : "application/octet-stream";
+
+    const signed = await this.objectStorage.presignGet({
+      objectKey: row.storageObjectKey,
+      expiresInSeconds: expiresSeconds,
+      responseContentType,
+    });
+    return { url: signed.url, expiresAt: signed.expiresAt };
   }
 }

@@ -1,6 +1,7 @@
 /**
  * Minimal DB-package env loader. The web/worker apps each have their own
- * env story (Next.js handles its own .env loading; the worker uses dotenv).
+ * env story (Next.js handles its own .env loading; API/worker import `boot-env`
+ * to load the monorepo root `.env` before zod validation).
  * Here we read at import time only when running drizzle-kit / migrate.ts.
  */
 import { config } from "dotenv";

@@ -75,6 +75,10 @@ export const PROCESSING_STATUSES = [
 ] as const;
 export type ProcessingStatus = (typeof PROCESSING_STATUSES)[number];
 
+/** Which object a presigned GET targets (`GET /v1/videos/:id/read-url?asset=…`). */
+export const VIDEO_READ_ASSETS = ["source", "thumbnail"] as const;
+export type VideoReadAsset = (typeof VIDEO_READ_ASSETS)[number];
+
 export const VIDEO_PRIVACY = ["private", "unlisted", "shared"] as const;
 export type VideoPrivacy = (typeof VIDEO_PRIVACY)[number];
 

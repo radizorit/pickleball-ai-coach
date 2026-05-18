@@ -1,4 +1,4 @@
-import { HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Injectable } from "@nestjs/common";
 
@@ -6,6 +6,8 @@ import type { ApiEnv } from "../env.js";
 
 import type {
   ObjectStoragePort,
+  PresignedGetRequest,
+  PresignedGetResult,
   PresignedPutRequest,
   PresignedPutResult,
 } from "./object-storage.port.js";
@@ -20,7 +22,8 @@ export class S3ObjectStorage implements ObjectStoragePort {
   readonly providerId: "r2" | "s3";
   private readonly client: S3Client;
   private readonly bucket: string;
-  private readonly presignExpiresSeconds: number;
+  private readonly presignUploadExpiresSeconds: number;
+  private readonly presignReadExpiresSeconds: number;
 
   constructor(env: ApiEnv) {
     this.providerId = storageProviderLabel(env);
@@ -31,7 +34,8 @@ export class S3ObjectStorage implements ObjectStoragePort {
       throw new Error("S3ObjectStorage constructed without credentials");
     }
     this.bucket = bucket;
-    this.presignExpiresSeconds = env.PRESIGNED_UPLOAD_EXPIRES_SECONDS;
+    this.presignUploadExpiresSeconds = env.PRESIGNED_UPLOAD_EXPIRES_SECONDS;
+    this.presignReadExpiresSeconds = env.PRESIGNED_READ_EXPIRES_SECONDS;
 
     const region = env.S3_REGION ?? (env.S3_ENDPOINT ? "auto" : "us-east-1");
     const endpoint = env.S3_ENDPOINT;
@@ -57,7 +61,7 @@ export class S3ObjectStorage implements ObjectStoragePort {
       ContentLength: req.contentLength,
     });
 
-    const expiresIn = Math.min(req.expiresInSeconds, this.presignExpiresSeconds);
+    const expiresIn = Math.min(req.expiresInSeconds, this.presignUploadExpiresSeconds);
     const url = await getSignedUrl(this.client, command, { expiresIn });
 
     const requiredHeaders: Record<string, string> = {
@@ -68,6 +72,19 @@ export class S3ObjectStorage implements ObjectStoragePort {
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
     return { method: "PUT", url, requiredHeaders, expiresAt };
+  }
+
+  async presignGet(req: PresignedGetRequest): Promise<PresignedGetResult> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: req.objectKey,
+      ...(req.responseContentType ? { ResponseContentType: req.responseContentType } : {}),
+    });
+
+    const expiresIn = Math.min(req.expiresInSeconds, this.presignReadExpiresSeconds);
+    const url = await getSignedUrl(this.client, command, { expiresIn });
+    const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+    return { method: "GET", url, expiresAt };
   }
 
   async headObject(objectKey: string): Promise<{ contentLength: number } | null> {

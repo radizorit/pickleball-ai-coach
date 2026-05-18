@@ -16,6 +16,7 @@ import {
   TEAM_POSITIONS,
   TEAMS,
   VIDEO_PRIVACY,
+  VIDEO_READ_ASSETS,
 } from "../constants/index.js";
 
 /**
@@ -36,6 +37,8 @@ export const zProcessingStatus = z.enum(PROCESSING_STATUSES);
 export const zVideoPrivacy = z.enum(VIDEO_PRIVACY);
 export const zPlan = z.enum(PLANS);
 export const zOrgRole = z.enum(ORG_ROLES);
+
+export const zVideoReadAsset = z.enum(VIDEO_READ_ASSETS);
 
 export const zUuid = z.string().uuid();
 export const zIsoDateTime = z.string().datetime({ offset: true });
@@ -129,5 +132,11 @@ export const zVideoPresignedUploadDTO = z.object({
   video: zVideoDTO,
 });
 export type VideoPresignedUploadDTOValidated = z.infer<typeof zVideoPresignedUploadDTO>;
+
+export const zVideoPresignedReadDTO = z.object({
+  url: z.string().url(),
+  expiresAt: zIsoDateTime,
+});
+export type VideoPresignedReadDTOValidated = z.infer<typeof zVideoPresignedReadDTO>;
 
 export type VideoDTOValidated = z.infer<typeof zVideoDTO>;

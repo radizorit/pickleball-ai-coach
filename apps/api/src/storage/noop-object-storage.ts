@@ -2,6 +2,8 @@ import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 
 import type {
   ObjectStoragePort,
+  PresignedGetRequest,
+  PresignedGetResult,
   PresignedPutRequest,
   PresignedPutResult,
 } from "./object-storage.port.js";
@@ -15,6 +17,12 @@ export class NoopObjectStorage implements ObjectStoragePort {
   }
 
   async presignPut(_req: PresignedPutRequest): Promise<PresignedPutResult> {
+    throw new ServiceUnavailableException(
+      "Object storage is not configured (set S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and S3_REGION or S3_ENDPOINT).",
+    );
+  }
+
+  async presignGet(_req: PresignedGetRequest): Promise<PresignedGetResult> {
     throw new ServiceUnavailableException(
       "Object storage is not configured (set S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and S3_REGION or S3_ENDPOINT).",
     );

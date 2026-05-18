@@ -103,18 +103,26 @@ pnpm db:seed
 - **Web:** `/videos`, `/videos/new` (create + direct browser upload with progress),
   `/videos/:id` detail.
 - **API:** `GET/POST /v1/videos`, `GET /v1/videos/:id`, `POST /v1/videos/:id/presign`,
-  `POST /v1/videos/:id/complete-upload` — all require a Clerk JWT. DTOs live in
+  `POST /v1/videos/:id/complete-upload`, `GET /v1/videos/:id/read-url?asset=source|thumbnail`
+  (short-lived signed GET for playback/poster) — all require a Clerk JWT. DTOs live in
   `@pickleball/shared`.
 - **Flow:** `pending` → (presign) → `uploading` → (browser PUT to presigned URL) →
   `complete-upload` → `uploaded` (API verifies size via `HeadObject`) →
   **`processing` → `ready`** (worker: ffprobe + poster `poster.jpg`) or **`failed`**.
 - **DB:** Drizzle migrations under `packages/db/drizzle/` (including `thumbnail_object_key`).
-- **Storage:** set `S3_*` env vars on the API **and worker** for **AWS S3** or **Cloudflare R2**
-  (S3-compatible endpoint). If unset, presign returns **503** and the noop adapter is used.
+- **Storage:** set `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_REGION` (AWS)
+  or `S3_ENDPOINT` + region (R2) in the **repo root** `.env` for the API **and worker**
+  (same file; `boot-env` loads it for both apps). If unset on the API, presign returns **503**
+  (noop adapter). The **worker** exits at boot if those vars are missing — it needs S3 to upload posters.
+- **AWS S3:** create a private bucket in your chosen region, then an IAM user with programmatic access
+  and an inline policy granting `s3:GetObject`, `s3:PutObject`, and `s3:HeadObject` on `arn:aws:s3:::your-bucket/*`
+  (add `s3:ListBucket` on the bucket ARN if you use console verification). Put the access key id and secret
+  in `.env` as `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`. Match `S3_REGION` to the bucket region.
+  Configure bucket **CORS** for `PUT` and `GET` from `http://localhost:3000` (see below).
 - **Posters:** same bucket as the source file; object key `videos/<userId>/<videoId>/poster.jpg`
   stored on the row as `thumbnailObjectKey`.
-- **R2 / S3 CORS:** allow `PUT` from your web origin on the bucket, and expose
-  `ETag` if you later need multipart.
+- **R2 / S3 CORS:** allow `PUT` from your web origin on the bucket; for `<video>` / Range requests,
+  allow `GET` from browser origins (or use a CDN origin later). Expose `ETag` if you need multipart.
 
 ## Local development
 

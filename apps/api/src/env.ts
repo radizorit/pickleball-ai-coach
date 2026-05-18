@@ -30,6 +30,8 @@ const schema = z.object({
     .max(DEFAULT_MAX_VIDEO_UPLOAD_BYTES)
     .default(DEFAULT_MAX_VIDEO_UPLOAD_BYTES),
   PRESIGNED_UPLOAD_EXPIRES_SECONDS: z.coerce.number().int().positive().max(604800).default(3600),
+  /** Max TTL for presigned GET (playback / poster). Capped for private media safety. */
+  PRESIGNED_READ_EXPIRES_SECONDS: z.coerce.number().int().positive().max(3600).default(900),
 });
 
 export type ApiEnv = z.infer<typeof schema>;

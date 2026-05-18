@@ -7,16 +7,27 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiTags } from "@nestjs/swagger";
-import type { VideoDTO, VideoPresignedUploadDTO } from "@pickleball/shared";
-import { zCreateVideoBody, zPresignVideoUploadBody } from "@pickleball/shared/zod";
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOkResponse,
+  ApiQuery,
+  ApiTags,
+} from "@nestjs/swagger";
+import type { VideoDTO, VideoPresignedReadDTO, VideoPresignedUploadDTO } from "@pickleball/shared";
+import { zCreateVideoBody, zPresignVideoUploadBody, zVideoReadAsset } from "@pickleball/shared/zod";
 
 import { AuthGuard } from "../../auth/auth.guard.js";
 import { CurrentAuth } from "../../auth/current-auth.decorator.js";
 import type { AuthContext } from "../../auth/auth.types.js";
-import { VideoPresignedUploadResponseDto, VideoResponseDto } from "./videos.dto.js";
+import {
+  VideoPresignedReadResponseDto,
+  VideoPresignedUploadResponseDto,
+  VideoResponseDto,
+} from "./videos.dto.js";
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- Nest injects VideosService by class reference
 import { VideosService } from "./videos.service.js";
 
@@ -103,6 +114,30 @@ export class VideosController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ): Promise<VideoDTO> {
     return this.videos.completeUpload(auth, id);
+  }
+
+  @Get(":id/read-url")
+  @ApiQuery({
+    name: "asset",
+    required: true,
+    enum: ["source", "thumbnail"],
+    description: "`source` = original upload; `thumbnail` = poster JPEG (only when `ready`).",
+  })
+  @ApiOkResponse({ type: VideoPresignedReadResponseDto })
+  presignRead(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query("asset") assetRaw: string,
+  ): Promise<VideoPresignedReadDTO> {
+    const parsed = zVideoReadAsset.safeParse(assetRaw);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Invalid or missing asset query (use source or thumbnail).",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.videos.presignReadForUser(auth, id, parsed.data);
   }
 
   @Get(":id")

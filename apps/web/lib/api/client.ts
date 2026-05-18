@@ -9,6 +9,7 @@ import type {
   HealthResponse,
   UserDTO,
   VideoDTO,
+  VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
 } from "@pickleball/shared";
 import type { CreateVideoBody, PresignVideoUploadBody } from "@pickleball/shared/zod";
@@ -103,6 +104,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
       request<VideoDTO>(`/v1/videos/${encodeURIComponent(id)}/complete-upload`, {
         method: "POST",
       }),
+    /** Short-lived signed GET for `<video src>` / `<img src>` (never use raw object keys in the browser). */
+    videosReadUrl: (id: string, asset: "source" | "thumbnail") =>
+      request<VideoPresignedReadDTO>(
+        `/v1/videos/${encodeURIComponent(id)}/read-url?asset=${encodeURIComponent(asset)}`,
+      ),
   };
 }
 

@@ -10,15 +10,16 @@ export class HealthResponseDto implements HealthResponse {
   @ApiProperty({ enum: ["ok"] })
   status!: "ok";
 
-  @ApiProperty()
+  /** Explicit `type` avoids Swagger mis-inferring `service` as a circular class ref. */
+  @ApiProperty({ type: String, example: "api" })
   service!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String, example: "0.1.0" })
   version!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number, example: 12.34 })
   uptimeSeconds!: number;
 
-  @ApiProperty({ format: "date-time" })
+  @ApiProperty({ type: String, format: "date-time" })
   timestamp!: string;
 }
