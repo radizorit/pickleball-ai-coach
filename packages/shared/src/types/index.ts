@@ -71,6 +71,17 @@ export interface VideoDTO {
   updatedAt: string;
 }
 
+/** `POST /v1/videos/:id/presign` — row is `uploading` before browser PUT completes. */
+export interface VideoPresignedUploadDTO {
+  upload: {
+    method: "PUT";
+    url: string;
+    requiredHeaders: Record<string, string>;
+    expiresAt: string;
+  };
+  video: VideoDTO;
+}
+
 export interface MatchDTO {
   id: string;
   videoId: string;

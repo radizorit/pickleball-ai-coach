@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   ACCEPTED_VIDEO_MIME_TYPES,
+  DEFAULT_MAX_VIDEO_UPLOAD_BYTES,
   COURT_ZONES,
   MATCH_TYPES,
   ORG_ROLES,
@@ -81,6 +82,16 @@ export const zCreateVideoBody = z.object({
 export type CreateVideoBody = z.infer<typeof zCreateVideoBody>;
 
 /**
+ * Body for `POST /v1/videos/:id/presign` — must match the file the client will PUT.
+ */
+export const zPresignVideoUploadBody = z.object({
+  contentType: zAcceptedVideoMime,
+  fileSizeBytes: z.number().int().positive().max(DEFAULT_MAX_VIDEO_UPLOAD_BYTES),
+  originalFilename: z.string().min(1).max(512),
+});
+export type PresignVideoUploadBody = z.infer<typeof zPresignVideoUploadBody>;
+
+/**
  * Mirrors `VideoDTO` for optional client-side response validation.
  */
 export const zVideoDTO = z.object({
@@ -107,4 +118,15 @@ export const zVideoDTO = z.object({
   createdAt: zIsoDateTime,
   updatedAt: zIsoDateTime,
 });
+export const zVideoPresignedUploadDTO = z.object({
+  upload: z.object({
+    method: z.literal("PUT"),
+    url: z.string().url(),
+    requiredHeaders: z.record(z.string(), z.string()),
+    expiresAt: zIsoDateTime,
+  }),
+  video: zVideoDTO,
+});
+export type VideoPresignedUploadDTOValidated = z.infer<typeof zVideoPresignedUploadDTO>;
+
 export type VideoDTOValidated = z.infer<typeof zVideoDTO>;

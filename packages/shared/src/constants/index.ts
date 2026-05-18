@@ -91,3 +91,6 @@ export const ACCEPTED_VIDEO_MIME_TYPES = [
   "video/webm",
 ] as const;
 export type AcceptedVideoMimeType = (typeof ACCEPTED_VIDEO_MIME_TYPES)[number];
+
+/** Default max raw video upload size (5 GiB). API may cap lower via env. */
+export const DEFAULT_MAX_VIDEO_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;

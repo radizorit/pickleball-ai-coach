@@ -4,8 +4,14 @@
  * When `getToken` is provided (Clerk session JWT), requests include
  * `Authorization: Bearer …` for protected Nest routes.
  */
-import type { ApiError, HealthResponse, UserDTO, VideoDTO } from "@pickleball/shared";
-import type { CreateVideoBody } from "@pickleball/shared/zod";
+import type {
+  ApiError,
+  HealthResponse,
+  UserDTO,
+  VideoDTO,
+  VideoPresignedUploadDTO,
+} from "@pickleball/shared";
+import type { CreateVideoBody, PresignVideoUploadBody } from "@pickleball/shared/zod";
 
 export type GetTokenFn = () => Promise<string | null>;
 
@@ -88,6 +94,15 @@ export function createApiClient(options: ApiClientOptions = {}) {
     videosGet: (id: string) => request<VideoDTO>(`/v1/videos/${encodeURIComponent(id)}`),
     videosCreate: (body: CreateVideoBody) =>
       request<VideoDTO>("/v1/videos", { method: "POST", body: JSON.stringify(body) }),
+    videosPresignUpload: (id: string, body: PresignVideoUploadBody) =>
+      request<VideoPresignedUploadDTO>(`/v1/videos/${encodeURIComponent(id)}/presign`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    videosCompleteUpload: (id: string) =>
+      request<VideoDTO>(`/v1/videos/${encodeURIComponent(id)}/complete-upload`, {
+        method: "POST",
+      }),
   };
 }
 

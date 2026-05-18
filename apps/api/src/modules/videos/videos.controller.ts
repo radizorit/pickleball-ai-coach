@@ -10,13 +10,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiTags } from "@nestjs/swagger";
-import type { VideoDTO } from "@pickleball/shared";
-import { zCreateVideoBody } from "@pickleball/shared/zod";
+import type { VideoDTO, VideoPresignedUploadDTO } from "@pickleball/shared";
+import { zCreateVideoBody, zPresignVideoUploadBody } from "@pickleball/shared/zod";
 
 import { AuthGuard } from "../../auth/auth.guard.js";
 import { CurrentAuth } from "../../auth/current-auth.decorator.js";
 import type { AuthContext } from "../../auth/auth.types.js";
-import { VideoResponseDto } from "./videos.dto.js";
+import { VideoPresignedUploadResponseDto, VideoResponseDto } from "./videos.dto.js";
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- Nest injects VideosService by class reference
 import { VideosService } from "./videos.service.js";
 
@@ -62,6 +62,47 @@ export class VideosController {
       });
     }
     return this.videos.create(auth, parsed.data);
+  }
+
+  @Post(":id/presign")
+  @ApiOkResponse({ type: VideoPresignedUploadResponseDto })
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["contentType", "fileSizeBytes", "originalFilename"],
+      properties: {
+        contentType: {
+          type: "string",
+          enum: ["video/mp4", "video/quicktime", "video/x-matroska", "video/webm"],
+        },
+        fileSizeBytes: { type: "integer", minimum: 1 },
+        originalFilename: { type: "string", minLength: 1, maxLength: 512 },
+      },
+    },
+  })
+  presign(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ): Promise<VideoPresignedUploadDTO> {
+    const parsed = zPresignVideoUploadBody.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.videos.presignUpload(auth, id, parsed.data);
+  }
+
+  @Post(":id/complete-upload")
+  @ApiOkResponse({ type: VideoResponseDto })
+  complete(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<VideoDTO> {
+    return this.videos.completeUpload(auth, id);
   }
 
   @Get(":id")

@@ -70,3 +70,24 @@ export class VideoResponseDto implements VideoDTO {
   @ApiProperty({ format: "date-time" })
   updatedAt!: string;
 }
+
+export class VideoPresignedUploadResponseDto {
+  @ApiProperty({
+    type: "object",
+    properties: {
+      method: { type: "string", example: "PUT" },
+      url: { type: "string" },
+      requiredHeaders: { type: "object", additionalProperties: { type: "string" } },
+      expiresAt: { type: "string", format: "date-time" },
+    },
+  })
+  upload!: {
+    method: "PUT";
+    url: string;
+    requiredHeaders: Record<string, string>;
+    expiresAt: string;
+  };
+
+  @ApiProperty({ type: () => VideoResponseDto })
+  video!: VideoResponseDto;
+}

@@ -98,15 +98,18 @@ pnpm db:seed
 
 ## Video records (upload foundation)
 
-- **Web:** signed-in users visit `/videos` and `/videos/new` (metadata only today).
-- **API:** `GET/POST /v1/videos`, `GET /v1/videos/:id` — all require a Clerk JWT;
-  responses use `VideoDTO` from `@pickleball/shared`.
-- **DB:** migration `0001_video_upload_foundation.sql` extends `processing_status`
-  (`uploading`, `uploaded`), makes `videos.organization_id` nullable, and adds
-  provider-agnostic storage columns. Requires an existing `videos` table + enum
-  (baseline from `pnpm db:push` in `packages/db` if you are bootstrapping a fresh DB).
-- **Storage:** `ObjectStoragePort` is registered with a **noop** adapter until
-  R2/S3 credentials exist.
+- **Web:** `/videos`, `/videos/new` (create + direct browser upload with progress),
+  `/videos/:id` detail.
+- **API:** `GET/POST /v1/videos`, `GET /v1/videos/:id`, `POST /v1/videos/:id/presign`,
+  `POST /v1/videos/:id/complete-upload` — all require a Clerk JWT. DTOs live in
+  `@pickleball/shared`.
+- **Flow:** `pending` → (presign) → `uploading` → (browser PUT to presigned URL) →
+  `complete-upload` → `uploaded` (API verifies size via `HeadObject`).
+- **DB:** migration `0001_video_upload_foundation.sql` (see earlier setup notes).
+- **Storage:** set `S3_*` env vars on the API for **AWS S3** or **Cloudflare R2**
+  (S3-compatible endpoint). If unset, presign returns **503** and the noop adapter is used.
+- **R2 / S3 CORS:** allow `PUT` from your web origin on the bucket, and expose
+  `ETag` if you later need multipart.
 
 ## Local development
 
