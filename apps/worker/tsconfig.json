@@ -1,0 +1,12 @@
+{
+  "extends": "@pickleball/config/tsconfig/node.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": false,
+    "noEmit": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -57,6 +57,7 @@ function toVideoDTO(row: Video): VideoDTO {
     storageProvider: row.storageProvider ?? null,
     storageBucket: row.storageBucket ?? null,
     storageObjectKey: row.storageObjectKey ?? null,
+    thumbnailObjectKey: row.thumbnailObjectKey ?? null,
     durationSeconds: row.durationSeconds ?? null,
     fps: row.fps ?? null,
     width: row.width ?? null,

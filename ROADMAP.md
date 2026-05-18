@@ -52,7 +52,7 @@ Process videos in the background.
 
 Tasks:
 
-- Add worker service
+- Add worker service (**done:** `apps/worker` polls Postgres; queue optional next)
 - Add job queue
 - Run FFmpeg metadata extraction
 - Generate thumbnail

@@ -105,6 +105,7 @@ export const zVideoDTO = z.object({
   storageProvider: z.string().nullable(),
   storageBucket: z.string().nullable(),
   storageObjectKey: z.string().nullable(),
+  thumbnailObjectKey: z.string().nullable(),
   durationSeconds: z.number().int().nullable(),
   fps: z.number().int().nullable(),
   width: z.number().int().nullable(),

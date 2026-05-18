@@ -116,13 +116,12 @@ ROADMAP.md
 - Feedback generation
 - Subscription enforcement
 
-3. Worker
+3. Worker (`apps/worker`)
 
-- Process uploaded videos
-- Generate thumbnails
-- Extract metadata
-- Create preview clips
-- Run AI jobs later
+- Polls Postgres for `uploaded` (and stale `processing`) videos; claims with `FOR UPDATE SKIP LOCKED`
+- Downloads the source object from the user bucket, runs **ffprobe** + **ffmpeg**
+- Writes `poster.jpg` beside the source key, updates `duration_seconds`, `fps`, `width`/`height`, `thumbnail_object_key`
+- Marks `ready` or `failed` + `failure_message`; queue integration can call the same processor later
 
 4. AI Service
 

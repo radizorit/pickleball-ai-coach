@@ -5,8 +5,9 @@ the shots, and get coaching feedback that tells you what to drill next.
 
 This repo ships a **Clerk auth foundation** (web session + API JWT + DB user
 sync) and a **video upload foundation**: authenticated users can create and
-list video metadata rows via `/v1/videos` (storage + workers are still
-ahead). AI, billing, and organizations remain later phases. See [`ROADMAP.md`](ROADMAP.md)
+list video metadata rows via `/v1/videos`, upload to S3/R2, and a **polling
+worker** (`apps/worker`) promotes rows to `ready` with metadata + a poster
+JPEG. AI, billing, and organizations remain later phases. See [`ROADMAP.md`](ROADMAP.md)
 for the full sequence, and [`SPEC.md`](SPEC.md) +
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the long form product and
 architecture plans.
@@ -28,6 +29,7 @@ architecture plans.
 apps/
   web/          Next.js — Clerk auth, marketing, `/dashboard`, `/videos`, webhooks
   api/          NestJS REST API (versioned at /v1, Swagger at /docs)
+  worker/       Node worker — Postgres claim loop, ffprobe/ffmpeg, poster to R2/S3
   mobile/       Placeholder for the future Expo / React Native app
 packages/
   shared/       Pure-TS types, zod schemas, enums. Imported by web + api + mobile.
@@ -46,8 +48,8 @@ The dependency graph is strictly one-way:
 config  ←  shared  ←  db
                 ↑          ↑
                 ╰── api  ──╯
-                ↑
-                web
+                ↑          ↑
+                web        worker
 ```
 
 `shared` never imports from `db` or any app — it is the cross-network
@@ -104,10 +106,13 @@ pnpm db:seed
   `POST /v1/videos/:id/complete-upload` — all require a Clerk JWT. DTOs live in
   `@pickleball/shared`.
 - **Flow:** `pending` → (presign) → `uploading` → (browser PUT to presigned URL) →
-  `complete-upload` → `uploaded` (API verifies size via `HeadObject`).
-- **DB:** migration `0001_video_upload_foundation.sql` (see earlier setup notes).
-- **Storage:** set `S3_*` env vars on the API for **AWS S3** or **Cloudflare R2**
+  `complete-upload` → `uploaded` (API verifies size via `HeadObject`) →
+  **`processing` → `ready`** (worker: ffprobe + poster `poster.jpg`) or **`failed`**.
+- **DB:** Drizzle migrations under `packages/db/drizzle/` (including `thumbnail_object_key`).
+- **Storage:** set `S3_*` env vars on the API **and worker** for **AWS S3** or **Cloudflare R2**
   (S3-compatible endpoint). If unset, presign returns **503** and the noop adapter is used.
+- **Posters:** same bucket as the source file; object key `videos/<userId>/<videoId>/poster.jpg`
+  stored on the row as `thumbnailObjectKey`.
 - **R2 / S3 CORS:** allow `PUT` from your web origin on the bucket, and expose
   `ETag` if you later need multipart.
 
@@ -129,6 +134,7 @@ Run them individually if you prefer:
 ```bash
 pnpm dev:web      # only the Next.js app
 pnpm dev:api      # only the NestJS API
+pnpm dev:worker   # video metadata + poster worker (needs ffmpeg/ffprobe + S3_*)
 ```
 
 The web landing page has a small status pill that fetches `/v1/health` —
@@ -180,8 +186,8 @@ pnpm db:seed          # idempotent demo seed
 | Organizations / RBAC | 2+    | Tables exist; provisioning, invites, and role enforcement are next. |
 | Video upload         | 2     | Direct-to-S3 multipart from the browser, signed URLs from           |
 |                      |       | the API. New `upload_sessions` table + R2/S3 service.               |
-| Background worker    | 3     | New `apps/worker` with BullMQ + Redis + FFmpeg for                  |
-|                      |       | thumbnails, preview clips, metadata extraction.                     |
+| Background worker    | 3     | `apps/worker` polls Postgres + FFmpeg/ffprobe; swap in a queue later. |
+|                      |       | Redis/BullMQ optional for fan-out.                                  |
 | Tagging studio       | 4     | Desktop/tablet-first video review UI under `(app)/videos`.          |
 | Stats engine         | 5     | Restore `packages/shared/stats` with deterministic helpers.         |
 | Feedback reports     | 6     | Restore `packages/shared/feedback` (rule-based) → LLM later.        |

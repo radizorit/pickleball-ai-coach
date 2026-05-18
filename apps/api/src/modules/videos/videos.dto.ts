@@ -35,6 +35,9 @@ export class VideoResponseDto implements VideoDTO {
   storageObjectKey!: string | null;
 
   @ApiProperty({ nullable: true })
+  thumbnailObjectKey!: string | null;
+
+  @ApiProperty({ nullable: true })
   durationSeconds!: number | null;
 
   @ApiProperty({ nullable: true })

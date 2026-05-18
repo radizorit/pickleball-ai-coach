@@ -57,6 +57,8 @@ export interface VideoDTO {
   storageProvider: string | null;
   storageBucket: string | null;
   storageObjectKey: string | null;
+  /** Poster in object storage (same bucket as source). */
+  thumbnailObjectKey: string | null;
   durationSeconds: number | null;
   fps: number | null;
   width: number | null;

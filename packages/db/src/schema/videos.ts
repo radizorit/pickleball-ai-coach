@@ -28,6 +28,7 @@ export const videos = pgTable(
     storageProvider: text("storage_provider"),
     storageBucket: text("storage_bucket"),
     storageObjectKey: text("storage_object_key"),
+    thumbnailObjectKey: text("thumbnail_object_key"),
     durationSeconds: integer("duration_seconds"),
     fps: integer("fps"),
     width: integer("width"),

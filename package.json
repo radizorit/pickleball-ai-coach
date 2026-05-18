@@ -2,7 +2,7 @@
   "name": "pickleball-assistant",
   "version": "0.0.0",
   "private": true,
-  "description": "Pickleball AI Coach — video analytics SaaS (monorepo root)",
+  "description": "Pickleball AI Coach \u2014 video analytics SaaS (monorepo root)",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20.17.0",
@@ -26,7 +26,8 @@
     "db:seed": "pnpm --filter @pickleball/db db:seed",
     "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
-    "prepare": "husky"
+    "prepare": "husky",
+    "dev:worker": "pnpm --filter @pickleball/worker dev"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
