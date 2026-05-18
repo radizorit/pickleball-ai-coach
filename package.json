@@ -1,0 +1,48 @@
+{
+  "name": "pickleball-assistant",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pickleball AI Coach — video analytics SaaS (monorepo root)",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.17.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "dev:web": "pnpm --filter @pickleball/web dev",
+    "dev:api": "pnpm --filter @pickleball/api dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "pnpm --filter @pickleball/db db:generate",
+    "db:migrate": "pnpm --filter @pickleball/db db:migrate",
+    "db:push": "pnpm --filter @pickleball/db db:push",
+    "db:studio": "pnpm --filter @pickleball/db db:studio",
+    "db:seed": "pnpm --filter @pickleball/db db:seed",
+    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.4.2",
+    "prettier-plugin-tailwindcss": "^0.6.9",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

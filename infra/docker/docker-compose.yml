@@ -1,0 +1,27 @@
+###
+### Local dev stack. Spin up with:
+###   docker compose -f infra/docker/docker-compose.yml up -d
+###
+### Foundation: only Postgres. Redis / object storage will be added when the
+### upload + worker features land.
+###
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pickleball
+      POSTGRES_PASSWORD: pickleball
+      POSTGRES_DB: pickleball
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pickleball"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pg_data:

@@ -1,0 +1,48 @@
+{
+  "name": "@pickleball/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf .next .turbo dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.9.6",
+    "@pickleball/db": "workspace:*",
+    "@pickleball/shared": "workspace:*",
+    "@radix-ui/react-slot": "^1.1.1",
+    "@tanstack/react-query": "^5.62.10",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.469.0",
+    "next": "^15.2.3",
+    "next-themes": "^0.4.4",
+    "react": "~19.0.3",
+    "react-dom": "~19.0.3",
+    "svix": "^1.45.1",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@pickleball/config": "workspace:*",
+    "@tailwindcss/typography": "^0.5.15",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^20.14.10",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.17.0",
+    "happy-dom": "^15.11.7",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
