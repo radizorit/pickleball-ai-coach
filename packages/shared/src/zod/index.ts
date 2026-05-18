@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  ACCEPTED_VIDEO_MIME_TYPES,
   COURT_ZONES,
   MATCH_TYPES,
   ORG_ROLES,
@@ -64,3 +65,46 @@ export const zUserDTO = z.object({
   createdAt: zIsoDateTime,
 });
 export type UserDTOValidated = z.infer<typeof zUserDTO>;
+
+const zAcceptedVideoMime = z.enum(ACCEPTED_VIDEO_MIME_TYPES);
+
+/**
+ * `POST /v1/videos` body — validated on the API; clients may reuse for forms.
+ */
+export const zCreateVideoBody = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(5000).nullable().optional(),
+  privacy: zVideoPrivacy.optional(),
+  originalFilename: z.string().max(512).nullable().optional(),
+  contentType: zAcceptedVideoMime.nullable().optional(),
+});
+export type CreateVideoBody = z.infer<typeof zCreateVideoBody>;
+
+/**
+ * Mirrors `VideoDTO` for optional client-side response validation.
+ */
+export const zVideoDTO = z.object({
+  id: zUuid,
+  userId: zUuid,
+  organizationId: zUuid.nullable(),
+  title: z.string(),
+  description: z.string().nullable(),
+  originalFilename: z.string().nullable(),
+  contentType: z.string().nullable(),
+  storageProvider: z.string().nullable(),
+  storageBucket: z.string().nullable(),
+  storageObjectKey: z.string().nullable(),
+  durationSeconds: z.number().int().nullable(),
+  fps: z.number().int().nullable(),
+  width: z.number().int().nullable(),
+  height: z.number().int().nullable(),
+  fileSizeBytes: z.number().int().nullable(),
+  processingStatus: zProcessingStatus,
+  failureMessage: z.string().nullable(),
+  privacy: zVideoPrivacy,
+  matchType: zMatchType.nullable(),
+  recordedAt: zIsoDateTime.nullable(),
+  createdAt: zIsoDateTime,
+  updatedAt: zIsoDateTime,
+});
+export type VideoDTOValidated = z.infer<typeof zVideoDTO>;

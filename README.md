@@ -4,8 +4,9 @@ Production-grade pickleball video analytics SaaS. Upload your matches, tag
 the shots, and get coaching feedback that tells you what to drill next.
 
 This repo ships a **Clerk auth foundation** (web session + API JWT + DB user
-sync). Video upload, AI, billing, and organizations are still out of scope
-for now — each is a deliberate next phase. See [`ROADMAP.md`](ROADMAP.md)
+sync) and a **video upload foundation**: authenticated users can create and
+list video metadata rows via `/v1/videos` (storage + workers are still
+ahead). AI, billing, and organizations remain later phases. See [`ROADMAP.md`](ROADMAP.md)
 for the full sequence, and [`SPEC.md`](SPEC.md) +
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the long form product and
 architecture plans.
@@ -25,7 +26,7 @@ architecture plans.
 
 ```text
 apps/
-  web/          Next.js — Clerk auth, marketing site, `/dashboard`, webhooks
+  web/          Next.js — Clerk auth, marketing, `/dashboard`, `/videos`, webhooks
   api/          NestJS REST API (versioned at /v1, Swagger at /docs)
   mobile/       Placeholder for the future Expo / React Native app
 packages/
@@ -71,7 +72,7 @@ cp .env.example .env
 # 3. Start local Postgres
 pnpm docker:up
 
-# 4. Apply SQL migrations (adds `external_auth_id`, etc.)
+# 4. Apply SQL migrations (`external_auth_id`, video lifecycle columns, …)
 pnpm db:migrate
 
 # 5. (Optional) seed a local-only demo user (no Clerk id)
@@ -94,6 +95,18 @@ pnpm db:seed
 
 `apps/api` verifies bearer tokens via `@clerk/backend` behind a small
 `AuthPort` abstraction so swapping auth vendors later is localized.
+
+## Video records (upload foundation)
+
+- **Web:** signed-in users visit `/videos` and `/videos/new` (metadata only today).
+- **API:** `GET/POST /v1/videos`, `GET /v1/videos/:id` — all require a Clerk JWT;
+  responses use `VideoDTO` from `@pickleball/shared`.
+- **DB:** migration `0001_video_upload_foundation.sql` extends `processing_status`
+  (`uploading`, `uploaded`), makes `videos.organization_id` nullable, and adds
+  provider-agnostic storage columns. Requires an existing `videos` table + enum
+  (baseline from `pnpm db:push` in `packages/db` if you are bootstrapping a fresh DB).
+- **Storage:** `ObjectStoragePort` is registered with a **noop** adapter until
+  R2/S3 credentials exist.
 
 ## Local development
 
@@ -128,10 +141,10 @@ pnpm test             # vitest across every package
 pnpm format           # prettier --write
 pnpm format:check     # prettier --check (CI)
 
-pnpm db:generate      # generate a new Drizzle migration from schema changes
+pnpm db:generate      # build @pickleball/shared + db, then generate SQL from dist/schema
 pnpm db:migrate       # apply pending migrations
-pnpm db:push          # push the schema directly (dev only — no migration file)
-pnpm db:studio        # open Drizzle Studio against your DATABASE_URL
+pnpm db:push          # build shared + db, then push schema (dev only — no migration file)
+pnpm db:studio        # build shared + db, then open Drizzle Studio against DATABASE_URL
 pnpm db:seed          # idempotent demo seed
 ```
 

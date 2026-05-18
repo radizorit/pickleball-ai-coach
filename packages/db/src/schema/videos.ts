@@ -6,13 +6,10 @@ import { organizations } from "./organizations.js";
 import { users } from "./users.js";
 
 /**
- * A user-uploaded video record. Foundation-only:
- * - No storage-provider-specific columns (e.g. R2 keys) — those will land
- *   with the upload feature.
- * - No preview / thumbnail columns — those land with the worker.
- * - `processingStatus` is present so the future upload + worker code can
- *   transition rows through `pending -> processing -> ready` without a
- *   schema change.
+ * User-owned video metadata. Upload foundation:
+ * - `processing_status` drives the full lifecycle (pending → … → ready | failed).
+ * - Storage columns are opaque strings so R2/S3/local adapters share one row shape.
+ * - `organization_id` is nullable until personal-org provisioning exists.
  */
 export const videos = pgTable(
   "videos",
@@ -21,17 +18,23 @@ export const videos = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
     title: text("title").notNull(),
     description: text("description"),
+    originalFilename: text("original_filename"),
+    contentType: text("content_type"),
+    storageProvider: text("storage_provider"),
+    storageBucket: text("storage_bucket"),
+    storageObjectKey: text("storage_object_key"),
     durationSeconds: integer("duration_seconds"),
     fps: integer("fps"),
     width: integer("width"),
     height: integer("height"),
     fileSizeBytes: bigint("file_size_bytes", { mode: "number" }),
     processingStatus: processingStatusEnum("processing_status").notNull().default("pending"),
+    failureMessage: text("failure_message"),
     privacy: videoPrivacyEnum("privacy").notNull().default("private"),
     matchType: matchTypeEnum("match_type"),
     recordedAt: timestamp("recorded_at", { withTimezone: true }),

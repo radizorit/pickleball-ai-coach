@@ -5,6 +5,7 @@ import { AuthModule } from "./auth/auth.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { UsersModule } from "./modules/users/users.module.js";
 import { VideosModule } from "./modules/videos/videos.module.js";
+import { StorageModule } from "./storage/storage.module.js";
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { VideosModule } from "./modules/videos/videos.module.js";
       isGlobal: true,
     }),
     AuthModule,
+    StorageModule,
     HealthModule,
     UsersModule,
     VideosModule,

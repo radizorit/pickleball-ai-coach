@@ -25,15 +25,25 @@ function toUserDTO(row: User): UserDTO {
 
 @Injectable()
 export class UsersService {
+  /** DB primary key for the authenticated user (same upsert path as `getMe`). */
+  async resolveDbUserId(auth: AuthContext): Promise<string> {
+    const row = await this.upsertPrincipal(auth);
+    return row.id;
+  }
+
   async getMe(auth: AuthContext): Promise<UserDTO> {
+    const row = await this.upsertPrincipal(auth);
+    return toUserDTO(row);
+  }
+
+  private async upsertPrincipal(auth: AuthContext): Promise<User> {
     const db = getDb();
-    const row = await upsertUserFromExternalAuth(db, {
+    return upsertUserFromExternalAuth(db, {
       externalAuthProvider: auth.provider,
       externalAuthId: auth.externalAuthId,
       email: auth.email,
       name: auth.name,
       avatarUrl: auth.avatarUrl,
     });
-    return toUserDTO(row);
   }
 }

@@ -64,7 +64,15 @@ export type TeamPosition = (typeof TEAM_POSITIONS)[number];
 export const RALLY_RESULTS = ["winner", "forced_error", "unforced_error", "let", "fault"] as const;
 export type RallyResult = (typeof RALLY_RESULTS)[number];
 
-export const PROCESSING_STATUSES = ["pending", "processing", "ready", "failed"] as const;
+/** Full video lifecycle: DB row → client upload → object stored → worker → playable (or failed). */
+export const PROCESSING_STATUSES = [
+  "pending",
+  "uploading",
+  "uploaded",
+  "processing",
+  "ready",
+  "failed",
+] as const;
 export type ProcessingStatus = (typeof PROCESSING_STATUSES)[number];
 
 export const VIDEO_PRIVACY = ["private", "unlisted", "shared"] as const;

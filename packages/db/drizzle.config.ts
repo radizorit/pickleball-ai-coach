@@ -12,7 +12,9 @@ const url =
   "postgres://placeholder:placeholder@localhost:5432/placeholder";
 
 export default defineConfig({
-  schema: "./src/schema/index.ts",
+  // Compiled JS so drizzle-kit resolves `./enums.js` on disk. `db:push` /
+  // `db:generate` chain `pnpm --filter @pickleball/shared build && pnpm build`.
+  schema: "./dist/schema/index.js",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: { url },

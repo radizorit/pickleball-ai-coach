@@ -20,24 +20,27 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-screen flex-col">
       <header className="border-border bg-background/70 sticky top-0 z-40 border-b backdrop-blur">
         <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
+          <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-6">
+            <Link href="/dashboard" className="flex shrink-0 items-center gap-2 font-semibold">
               <span className="bg-primary inline-block h-6 w-6 rounded-md" />
-              Pickleball Assistant
+              <span className="truncate">Pickleball Assistant</span>
             </Link>
-            <nav className="text-muted-foreground hidden gap-4 text-sm sm:flex">
-              <Link href="/dashboard" className="hover:text-foreground">
+            <nav className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <Link href="/dashboard" className="hover:text-foreground whitespace-nowrap">
                 Dashboard
               </Link>
+              <Link href="/videos" className="hover:text-foreground whitespace-nowrap">
+                Videos
+              </Link>
               <span
-                className="cursor-not-allowed opacity-50"
+                className="cursor-not-allowed whitespace-nowrap opacity-50"
                 title="Organizations are coming in a later phase"
               >
                 Organization
               </span>
             </nav>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <ThemeToggle />
             <UserButton afterSignOutUrl="/" />
           </div>

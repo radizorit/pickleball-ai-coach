@@ -4,7 +4,8 @@
  * When `getToken` is provided (Clerk session JWT), requests include
  * `Authorization: Bearer …` for protected Nest routes.
  */
-import type { ApiError, HealthResponse, UserDTO } from "@pickleball/shared";
+import type { ApiError, HealthResponse, UserDTO, VideoDTO } from "@pickleball/shared";
+import type { CreateVideoBody } from "@pickleball/shared/zod";
 
 export type GetTokenFn = () => Promise<string | null>;
 
@@ -83,6 +84,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
     health: () => request<HealthResponse>("/v1/health"),
     me: () => request<UserDTO>("/v1/me"),
     mePing: () => request<{ ok: true; externalAuthId: string }>("/v1/me/ping"),
+    videosList: () => request<VideoDTO[]>("/v1/videos"),
+    videosGet: (id: string) => request<VideoDTO>(`/v1/videos/${encodeURIComponent(id)}`),
+    videosCreate: (body: CreateVideoBody) =>
+      request<VideoDTO>("/v1/videos", { method: "POST", body: JSON.stringify(body) }),
   };
 }
 

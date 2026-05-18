@@ -1,12 +1,12 @@
 import { Module } from "@nestjs/common";
 
+import { UsersModule } from "../users/users.module.js";
 import { VideosController } from "./videos.controller.js";
+import { VideosService } from "./videos.service.js";
 
-/**
- * Foundation placeholder. Endpoints exist so the OpenAPI surface is real,
- * but they return 501 until the upload flow lands in Phase 2.
- */
 @Module({
+  imports: [UsersModule],
   controllers: [VideosController],
+  providers: [VideosService],
 })
 export class VideosModule {}

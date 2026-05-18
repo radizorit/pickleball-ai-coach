@@ -47,19 +47,28 @@ export interface OrganizationDTO {
 export interface VideoDTO {
   id: string;
   userId: string;
-  organizationId: string;
+  /** Nullable until personal-org provisioning links videos to an org. */
+  organizationId: string | null;
   title: string;
   description: string | null;
+  originalFilename: string | null;
+  contentType: string | null;
+  /** Opaque provider id (e.g. `r2`, `s3`); null until an adapter writes keys. */
+  storageProvider: string | null;
+  storageBucket: string | null;
+  storageObjectKey: string | null;
   durationSeconds: number | null;
   fps: number | null;
   width: number | null;
   height: number | null;
   fileSizeBytes: number | null;
   processingStatus: ProcessingStatus;
+  failureMessage: string | null;
   privacy: VideoPrivacy;
   matchType: MatchType | null;
   recordedAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface MatchDTO {

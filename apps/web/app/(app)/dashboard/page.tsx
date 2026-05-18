@@ -29,8 +29,8 @@ export default async function DashboardPage() {
         <CardHeader>
           <CardTitle>What&apos;s next</CardTitle>
           <CardDescription>
-            Organizations and video upload are intentionally not built yet — see README for the
-            roadmap order.
+            Organizations are still deferred — video records and upload scaffolding are available
+            under Videos.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">

@@ -2,9 +2,12 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { Webhook } from "svix";
 
-import { serverEnv } from "@/env";
 import { createDb, upsertUserFromExternalAuth } from "@pickleball/db";
 import { isClerkConfigured } from "@/lib/clerk-config";
+
+/** Never import `@/env` here — that module validates all server env at load time and breaks `next build` when CI uses placeholders. */
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 interface ClerkEmail {
   id: string;
@@ -38,6 +41,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "Clerk is not configured" }, { status: 503 });
   }
 
+  const webhookSecret = process.env.CLERK_WEBHOOK_SECRET?.trim();
+  if (!webhookSecret) {
+    return NextResponse.json({ message: "Service unavailable" }, { status: 503 });
+  }
+
   const payload = await req.text();
   const headerPayload = await headers();
 
@@ -51,7 +59,7 @@ export async function POST(req: Request) {
 
   let evt: { type: string; data: unknown };
   try {
-    const wh = new Webhook(serverEnv.CLERK_WEBHOOK_SECRET);
+    const wh = new Webhook(webhookSecret);
     evt = wh.verify(payload, {
       "svix-id": svixId,
       "svix-timestamp": svixTimestamp,
@@ -68,7 +76,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "User payload missing email" }, { status: 400 });
     }
 
-    const db = createDb({ url: serverEnv.DATABASE_URL });
+    const databaseUrl = process.env.DATABASE_URL?.trim();
+    if (!databaseUrl) {
+      return NextResponse.json({ message: "Service unavailable" }, { status: 503 });
+    }
+    const db = createDb({ url: databaseUrl });
     await upsertUserFromExternalAuth(db, {
       externalAuthProvider: "clerk",
       externalAuthId: user.id,
