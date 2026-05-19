@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isYouTubeWatchUrl } from "../youtube.js";
 import {
   ACCEPTED_VIDEO_MIME_TYPES,
   DEFAULT_MAX_VIDEO_UPLOAD_BYTES,
@@ -75,13 +76,27 @@ const zAcceptedVideoMime = z.enum(ACCEPTED_VIDEO_MIME_TYPES);
 /**
  * `POST /v1/videos` body — validated on the API; clients may reuse for forms.
  */
-export const zCreateVideoBody = z.object({
-  title: z.string().min(1).max(200),
-  description: z.string().max(5000).nullable().optional(),
-  privacy: zVideoPrivacy.optional(),
-  originalFilename: z.string().max(512).nullable().optional(),
-  contentType: zAcceptedVideoMime.nullable().optional(),
-});
+export const zCreateVideoBody = z
+  .object({
+    title: z.string().min(1).max(200),
+    description: z.string().max(5000).nullable().optional(),
+    privacy: zVideoPrivacy.optional(),
+    originalFilename: z.string().max(512).nullable().optional(),
+    contentType: zAcceptedVideoMime.nullable().optional(),
+    /** When set, creates a YouTube-embed-only row (ready immediately; no upload). */
+    youtubeUrl: z.string().trim().url().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const yt = data.youtubeUrl?.trim();
+    if (!yt) return;
+    if (!isYouTubeWatchUrl(yt)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["youtubeUrl"],
+        message: "Use a youtube.com or youtu.be watch URL",
+      });
+    }
+  });
 export type CreateVideoBody = z.infer<typeof zCreateVideoBody>;
 
 /**
@@ -103,6 +118,7 @@ export const zVideoDTO = z.object({
   organizationId: zUuid.nullable(),
   title: z.string(),
   description: z.string().nullable(),
+  youtubeUrl: z.union([z.string().url(), z.null()]),
   originalFilename: z.string().nullable(),
   contentType: z.string().nullable(),
   storageProvider: z.string().nullable(),
@@ -140,3 +156,57 @@ export const zVideoPresignedReadDTO = z.object({
 export type VideoPresignedReadDTOValidated = z.infer<typeof zVideoPresignedReadDTO>;
 
 export type VideoDTOValidated = z.infer<typeof zVideoDTO>;
+
+/** `POST /v1/videos/:id/shot-events` — server sets `source` to `manual`. */
+export const zCreateShotEventBody = z.object({
+  timestampSeconds: z.number().nonnegative().max(864_000),
+  shotType: zShotType,
+  side: zShotSide,
+  outcome: zShotOutcome,
+  note: z.string().max(2000).nullable().optional(),
+  rallyId: zUuid.nullable().optional(),
+});
+export type CreateShotEventBody = z.infer<typeof zCreateShotEventBody>;
+
+/** `PATCH /v1/shot-events/:eventId` — at least one field required. */
+export const zUpdateShotEventBody = z
+  .object({
+    timestampSeconds: z.number().nonnegative().max(864_000).optional(),
+    shotType: zShotType.optional(),
+    side: zShotSide.optional(),
+    outcome: zShotOutcome.optional(),
+    note: z.string().max(2000).nullable().optional(),
+    rallyId: zUuid.nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const has =
+      data.timestampSeconds !== undefined ||
+      data.shotType !== undefined ||
+      data.side !== undefined ||
+      data.outcome !== undefined ||
+      data.note !== undefined ||
+      data.rallyId !== undefined;
+    if (!has) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide at least one field to update",
+      });
+    }
+  });
+export type UpdateShotEventBody = z.infer<typeof zUpdateShotEventBody>;
+
+export const zShotEventDTO = z.object({
+  id: zUuid,
+  videoId: zUuid,
+  rallyId: zUuid.nullable(),
+  timestampSeconds: z.number(),
+  shotType: zShotType,
+  side: zShotSide,
+  outcome: zShotOutcome,
+  note: z.string().nullable(),
+  source: zShotEventSource,
+  createdByUserId: zUuid,
+  createdAt: zIsoDateTime,
+  updatedAt: zIsoDateTime,
+});
+export type ShotEventDTOValidated = z.infer<typeof zShotEventDTO>;

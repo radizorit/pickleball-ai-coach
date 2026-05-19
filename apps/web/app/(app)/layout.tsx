@@ -8,7 +8,7 @@ import { isClerkConfigured } from "@/lib/clerk-config";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   if (!isClerkConfigured()) {
-    redirect("/");
+    redirect("/setup");
   }
 
   const session = await auth();

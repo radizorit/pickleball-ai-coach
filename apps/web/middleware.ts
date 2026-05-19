@@ -4,6 +4,7 @@ import { isClerkConfigured } from "@/lib/clerk-config";
 
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/setup",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/healthz",

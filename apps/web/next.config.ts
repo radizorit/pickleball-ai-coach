@@ -1,4 +1,12 @@
+import { config as loadEnv } from "dotenv";
 import type { NextConfig } from "next";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Next only auto-loads `.env*` from `apps/web`; the monorepo uses a single root `.env`.
+const rootEnvPath =
+  process.env.DOTENV_PATH ?? resolve(dirname(fileURLToPath(import.meta.url)), "../../.env");
+loadEnv({ path: rootEnvPath });
 
 const securityHeaders = [
   { key: "X-DNS-Prefetch-Control", value: "on" },

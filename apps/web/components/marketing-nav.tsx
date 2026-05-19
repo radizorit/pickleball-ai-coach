@@ -18,7 +18,7 @@ export function MarketingNav() {
       </Link>
       <ThemeToggle />
       {clerkOn ? (
-        <>
+        <div className="flex items-center gap-2">
           <SignedOut>
             <Button asChild variant="ghost" size="sm">
               <Link href="/sign-in">Sign in</Link>
@@ -33,16 +33,16 @@ export function MarketingNav() {
             </Button>
             <UserButton afterSignOutUrl="/" />
           </SignedIn>
-        </>
+        </div>
       ) : (
-        <>
+        <div className="flex items-center gap-2">
           <Button asChild variant="ghost" size="sm" disabled title="Set real Clerk keys in .env">
             Sign in
           </Button>
           <Button asChild size="sm" disabled title="Set real Clerk keys in .env">
             Get started
           </Button>
-        </>
+        </div>
       )}
     </nav>
   );

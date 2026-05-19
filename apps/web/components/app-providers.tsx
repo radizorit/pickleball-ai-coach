@@ -2,6 +2,7 @@
 
 import { ClerkProvider } from "@clerk/nextjs";
 
+import { QueryAuthSync } from "@/components/query-auth-sync";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/lib/query/provider";
 import { isClerkConfigured } from "@/lib/clerk-config";
@@ -17,7 +18,10 @@ export function AppProviders({
 
   const inner = (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-      <QueryProvider>{children}</QueryProvider>
+      <QueryProvider>
+        {clerkOn ? <QueryAuthSync /> : null}
+        {children}
+      </QueryProvider>
     </ThemeProvider>
   );
 

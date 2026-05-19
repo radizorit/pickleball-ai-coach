@@ -18,7 +18,6 @@ import type { AuthContext } from "../../auth/auth.types.js";
 import { loadEnv } from "../../env.js";
 import { OBJECT_STORAGE_PORT } from "../../storage/object-storage.port.js";
 import type { ObjectStoragePort } from "../../storage/object-storage.port.js";
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- Nest injects UsersService by class reference
 import { UsersService } from "../users/users.service.js";
 
 function toIso(value: Date | string): string {
@@ -52,6 +51,7 @@ function toVideoDTO(row: Video): VideoDTO {
     organizationId: row.organizationId,
     title: row.title,
     description: row.description ?? null,
+    youtubeUrl: row.youtubeUrl ?? null,
     originalFilename: row.originalFilename ?? null,
     contentType: row.contentType ?? null,
     storageProvider: row.storageProvider ?? null,
@@ -76,7 +76,7 @@ function toVideoDTO(row: Video): VideoDTO {
 @Injectable()
 export class VideosService {
   constructor(
-    private readonly users: UsersService,
+    @Inject(UsersService) private readonly users: UsersService,
     @Inject(OBJECT_STORAGE_PORT) private readonly objectStorage: ObjectStoragePort,
   ) {}
 
@@ -108,6 +108,46 @@ export class VideosService {
   async create(auth: AuthContext, body: CreateVideoBody): Promise<VideoDTO> {
     const userId = await this.users.resolveDbUserId(auth);
     const db = getDb();
+    const youtube = body.youtubeUrl?.trim();
+
+    if (youtube) {
+      let title = body.title.trim();
+      try {
+        const oembedUrl = `https://www.youtube.com/oembed?${new URLSearchParams({
+          url: youtube,
+          format: "json",
+        })}`;
+        const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const j = (await res.json()) as { title?: string };
+          if (typeof j.title === "string" && j.title.trim().length > 0) {
+            title = j.title.trim().slice(0, 200);
+          }
+        }
+      } catch {
+        // Non-fatal: keep client-provided title
+      }
+
+      const [row] = await db
+        .insert(videos)
+        .values({
+          userId,
+          organizationId: null,
+          title,
+          description: body.description ?? null,
+          privacy: body.privacy ?? "private",
+          youtubeUrl: youtube,
+          originalFilename: null,
+          contentType: null,
+          processingStatus: "ready",
+        })
+        .returning();
+      if (!row) {
+        throw new BadRequestException("Could not create video record");
+      }
+      return toVideoDTO(row);
+    }
+
     const [row] = await db
       .insert(videos)
       .values({
@@ -152,6 +192,9 @@ export class VideosService {
       .limit(1);
     if (!row) {
       throw new NotFoundException("Video not found");
+    }
+    if (row.youtubeUrl) {
+      throw new ConflictException("This video uses a YouTube link; file upload is not available.");
     }
     if (row.processingStatus !== "pending") {
       throw new ConflictException("Video is not in pending state; cannot start a new upload.");
@@ -215,6 +258,9 @@ export class VideosService {
     if (!row) {
       throw new NotFoundException("Video not found");
     }
+    if (row.youtubeUrl) {
+      throw new ConflictException("This video uses a YouTube link; upload completion does not apply.");
+    }
     if (row.processingStatus !== "uploading") {
       throw new ConflictException("Video is not awaiting upload completion.");
     }
@@ -251,12 +297,6 @@ export class VideosService {
     videoId: string,
     asset: VideoReadAsset,
   ): Promise<VideoPresignedReadDTO> {
-    if (!this.objectStorage.isUploadConfigured()) {
-      throw new ServiceUnavailableException(
-        "Object storage is not configured (set S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and S3_REGION or S3_ENDPOINT).",
-      );
-    }
-
     const env = loadEnv();
     const expiresSeconds = env.PRESIGNED_READ_EXPIRES_SECONDS;
 
@@ -269,6 +309,21 @@ export class VideosService {
       .limit(1);
     if (!row) {
       throw new NotFoundException("Video not found");
+    }
+
+    if (row.youtubeUrl) {
+      if (asset === "source") {
+        throw new ConflictException("This video uses YouTube embed playback; there is no signed source URL.");
+      }
+      throw new ConflictException(
+        "YouTube-linked videos use the public thumbnail at https://img.youtube.com/vi/<id>/maxresdefault.jpg (parse id from youtubeUrl on the client).",
+      );
+    }
+
+    if (!this.objectStorage.isUploadConfigured()) {
+      throw new ServiceUnavailableException(
+        "Object storage is not configured (set S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and S3_REGION or S3_ENDPOINT).",
+      );
     }
 
     if (asset === "thumbnail") {

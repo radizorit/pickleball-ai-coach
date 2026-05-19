@@ -7,12 +7,18 @@
 import type {
   ApiError,
   HealthResponse,
+  ShotEventDTO,
   UserDTO,
   VideoDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
 } from "@pickleball/shared";
-import type { CreateVideoBody, PresignVideoUploadBody } from "@pickleball/shared/zod";
+import type {
+  CreateShotEventBody,
+  CreateVideoBody,
+  PresignVideoUploadBody,
+  UpdateShotEventBody,
+} from "@pickleball/shared/zod";
 
 export type GetTokenFn = () => Promise<string | null>;
 
@@ -109,6 +115,22 @@ export function createApiClient(options: ApiClientOptions = {}) {
       request<VideoPresignedReadDTO>(
         `/v1/videos/${encodeURIComponent(id)}/read-url?asset=${encodeURIComponent(asset)}`,
       ),
+    videosShotEventsList: (videoId: string) =>
+      request<ShotEventDTO[]>(`/v1/videos/${encodeURIComponent(videoId)}/shot-events`),
+    videosShotEventsCreate: (videoId: string, body: CreateShotEventBody) =>
+      request<ShotEventDTO>(`/v1/videos/${encodeURIComponent(videoId)}/shot-events`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    shotEventsUpdate: (eventId: string, body: UpdateShotEventBody) =>
+      request<ShotEventDTO>(`/v1/shot-events/${encodeURIComponent(eventId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    shotEventsDelete: (eventId: string) =>
+      request<{ ok: true }>(`/v1/shot-events/${encodeURIComponent(eventId)}`, {
+        method: "DELETE",
+      }),
   };
 }
 

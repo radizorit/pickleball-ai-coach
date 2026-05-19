@@ -10,10 +10,17 @@
       "breakpoints": true
     },
     {
-      "idx": 1,
+      "idx": 2,
       "version": "6",
-      "when": 1739836800002,
-      "tag": "0001_video_thumbnail",
+      "when": 1739836800004,
+      "tag": "0002_youtube_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1739836800005,
+      "tag": "0003_shot_events",
       "breakpoints": true
     }
   ]

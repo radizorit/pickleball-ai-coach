@@ -19,6 +19,13 @@ export class VideoResponseDto implements VideoDTO {
   @ApiProperty({ type: String, nullable: true })
   description!: string | null;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "When set, playback uses YouTube embed (no signed S3 source URL).",
+  })
+  youtubeUrl!: string | null;
+
   @ApiProperty({ type: String, nullable: true })
   originalFilename!: string | null;
 

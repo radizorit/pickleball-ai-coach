@@ -13,6 +13,7 @@ import {
   DEFAULT_MAX_VIDEO_UPLOAD_BYTES,
 } from "@pickleball/shared/constants";
 import type { VideoPrivacy } from "@pickleball/shared/constants";
+import { isYouTubeWatchUrl } from "@pickleball/shared";
 import type { CreateVideoBody } from "@pickleball/shared/zod";
 
 const privacyOptions: VideoPrivacy[] = ["private", "unlisted", "shared"];
@@ -45,12 +46,16 @@ function putFileWithProgress(
   });
 }
 
+type SourceMode = "upload" | "youtube";
+
 export default function NewVideoPage() {
   const client = useAuthedApiClient();
   const router = useRouter();
+  const [sourceMode, setSourceMode] = useState<SourceMode>("youtube");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [privacy, setPrivacy] = useState<VideoPrivacy>("private");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<
@@ -68,6 +73,45 @@ export default function NewVideoPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (sourceMode === "youtube") {
+      const yt = youtubeUrl.trim();
+      if (!yt) {
+        setError("Paste a YouTube link.");
+        return;
+      }
+      if (!isYouTubeWatchUrl(yt)) {
+        setError("Use a youtube.com or youtu.be watch URL.");
+        return;
+      }
+      if (!title.trim()) {
+        setError("Title is required.");
+        return;
+      }
+      try {
+        setPhase("creating");
+        const body: CreateVideoBody = {
+          title: title.trim(),
+          youtubeUrl: yt,
+          ...(description.trim() !== "" ? { description: description.trim() } : {}),
+          privacy,
+        };
+        const created = await client.videosCreate(body);
+        router.push(`/videos/${created.id}`);
+      } catch (err) {
+        if (err instanceof ApiClientError) {
+          setError(`${err.statusCode} · ${err.code}: ${err.message}`);
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("Something went wrong");
+        }
+      } finally {
+        setPhase("idle");
+      }
+      return;
+    }
+
     if (!file) {
       setError("Choose a video file to upload.");
       return;
@@ -129,17 +173,48 @@ export default function NewVideoPage() {
           <Link href="/videos">← Back to videos</Link>
         </Button>
         <p className="text-primary text-sm font-medium uppercase tracking-wider">New video</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Upload a video</h1>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Add a video</h1>
         <p className="text-muted-foreground mt-2 text-sm">
-          Creates a DB record, then uploads directly to S3-compatible storage (R2 or AWS) using a
-          presigned URL. Configure API S3_* env vars first.
+          Link a YouTube URL for quick testing, or upload a file to S3-compatible storage (configure
+          API S3_* env vars for uploads).
         </p>
+      </div>
+
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant={sourceMode === "youtube" ? "default" : "outline"}
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            setSourceMode("youtube");
+            setError(null);
+          }}
+        >
+          YouTube link
+        </Button>
+        <Button
+          type="button"
+          variant={sourceMode === "upload" ? "default" : "outline"}
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            setSourceMode("upload");
+            setError(null);
+          }}
+        >
+          Upload file
+        </Button>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Details & file</CardTitle>
-          <CardDescription>Title is required. Pick one video file.</CardDescription>
+          <CardTitle>Details {sourceMode === "upload" ? "& file" : "& link"}</CardTitle>
+          <CardDescription>
+            {sourceMode === "youtube"
+              ? "Title is required. The API may replace it with the video title from YouTube."
+              : "Title is required. Pick one video file."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
@@ -151,7 +226,7 @@ export default function NewVideoPage() {
                 id="title"
                 required
                 maxLength={200}
-                value={title}
+                value={title ?? ""}
                 onChange={(e) => setTitle(e.target.value)}
                 disabled={busy}
                 className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50"
@@ -165,7 +240,7 @@ export default function NewVideoPage() {
               <textarea
                 id="description"
                 maxLength={5000}
-                value={description}
+                value={description ?? ""}
                 onChange={(e) => setDescription(e.target.value)}
                 disabled={busy}
                 rows={3}
@@ -190,24 +265,42 @@ export default function NewVideoPage() {
                 ))}
               </select>
             </div>
-            <div className="space-y-2">
-              <label htmlFor="file" className="text-sm font-medium">
-                Video file <span className="text-destructive">*</span>
-              </label>
-              <input
-                id="file"
-                type="file"
-                accept={ACCEPTED_VIDEO_MIME_TYPES.join(",")}
-                disabled={busy}
-                onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
-                className="text-muted-foreground file:bg-secondary text-sm file:mr-3 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
-              />
-              {file && (
-                <p className="text-muted-foreground text-xs">
-                  {file.name} · {(file.size / (1024 * 1024)).toFixed(2)} MiB · {file.type}
-                </p>
-              )}
-            </div>
+
+            {sourceMode === "youtube" ? (
+              <div key="source-youtube" className="space-y-2">
+                <label htmlFor="youtubeUrl" className="text-sm font-medium">
+                  YouTube URL <span className="text-destructive">*</span>
+                </label>
+                <input
+                  id="youtubeUrl"
+                  type="url"
+                  value={youtubeUrl ?? ""}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  disabled={busy}
+                  placeholder="https://www.youtube.com/watch?v=…"
+                  className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50"
+                />
+              </div>
+            ) : (
+              <div key="source-upload" className="space-y-2">
+                <label htmlFor="file" className="text-sm font-medium">
+                  Video file <span className="text-destructive">*</span>
+                </label>
+                <input
+                  id="file"
+                  type="file"
+                  accept={ACCEPTED_VIDEO_MIME_TYPES.join(",")}
+                  disabled={busy}
+                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
+                  className="text-muted-foreground file:bg-secondary text-sm file:mr-3 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+                />
+                {file && (
+                  <p className="text-muted-foreground text-xs">
+                    {file.name} · {(file.size / (1024 * 1024)).toFixed(2)} MiB · {file.type}
+                  </p>
+                )}
+              </div>
+            )}
 
             {phase === "uploading" && (
               <div className="space-y-1">
@@ -235,7 +328,11 @@ export default function NewVideoPage() {
             {error && <p className="text-destructive text-sm">{error}</p>}
             <div className="flex flex-wrap gap-2 pt-2">
               <Button type="submit" disabled={busy}>
-                {busy ? "Working…" : "Create & upload"}
+                {busy
+                  ? "Working…"
+                  : sourceMode === "youtube"
+                    ? "Save YouTube video"
+                    : "Create & upload"}
               </Button>
               <Button type="button" variant="outline" asChild disabled={busy}>
                 <Link href="/videos">Cancel</Link>

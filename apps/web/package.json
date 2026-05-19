@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.6",
+    "dotenv": "^16.4.7",
     "@pickleball/db": "workspace:*",
     "@pickleball/shared": "workspace:*",
     "@radix-ui/react-slot": "^1.1.1",

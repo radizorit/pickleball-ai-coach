@@ -22,10 +22,12 @@ export const SHOT_TYPES = [
   "reset",
   "lob",
   "overhead",
+  /** Manual tagging fallback when the shot shape is unclear. */
+  "unknown",
 ] as const;
 export type ShotType = (typeof SHOT_TYPES)[number];
 
-export const SHOT_SIDES = ["forehand", "backhand", "n_a"] as const;
+export const SHOT_SIDES = ["forehand", "backhand", "n_a", "unknown"] as const;
 export type ShotSide = (typeof SHOT_SIDES)[number];
 
 export const SHOT_OUTCOMES = [
@@ -35,6 +37,7 @@ export const SHOT_OUTCOMES = [
   "winner",
   "forced_error",
   "unforced_error",
+  "unknown",
 ] as const;
 export type ShotOutcome = (typeof SHOT_OUTCOMES)[number];
 

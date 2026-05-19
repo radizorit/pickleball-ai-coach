@@ -1,5 +1,4 @@
 import type {
-  CourtZone,
   MatchType,
   Plan,
   ProcessingStatus,
@@ -51,6 +50,8 @@ export interface VideoDTO {
   organizationId: string | null;
   title: string;
   description: string | null;
+  /** When set, playback uses YouTube embed (no signed S3 source URL). */
+  youtubeUrl: string | null;
   originalFilename: string | null;
   contentType: string | null;
   /** Opaque provider id (e.g. `r2`, `s3`); null until an adapter writes keys. */
@@ -121,20 +122,21 @@ export interface RallyDTO {
   result: RallyResult | null;
 }
 
+/**
+ * Manual (or future AI) shot tag on a video. Timestamps are in seconds to align
+ * with HTMLMediaElement.currentTime and worker-derived `durationSeconds`.
+ */
 export interface ShotEventDTO {
   id: string;
   videoId: string;
-  matchId: string;
   rallyId: string | null;
-  timestampMs: number;
-  participantId: string;
+  timestampSeconds: number;
   shotType: ShotType;
   side: ShotSide;
   outcome: ShotOutcome;
-  courtZone: CourtZone;
-  confidenceScore: number;
+  note: string | null;
   source: ShotEventSource;
-  createdByUserId: string | null;
+  createdByUserId: string;
   createdAt: string;
   updatedAt: string;
 }

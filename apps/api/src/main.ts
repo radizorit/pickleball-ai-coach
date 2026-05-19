@@ -1,5 +1,6 @@
-import "./boot-env.js";
 import "reflect-metadata";
+
+import "./boot-env.js";
 
 import { Logger, ValidationPipe, VersioningType } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";

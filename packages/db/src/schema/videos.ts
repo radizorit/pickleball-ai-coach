@@ -23,6 +23,8 @@ export const videos = pgTable(
     }),
     title: text("title").notNull(),
     description: text("description"),
+    /** When set, video is YouTube-embed only (no S3 upload / worker processing). */
+    youtubeUrl: text("youtube_url"),
     originalFilename: text("original_filename"),
     contentType: text("content_type"),
     storageProvider: text("storage_provider"),

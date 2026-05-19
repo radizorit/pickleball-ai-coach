@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Controller, Get, Inject, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from "@nestjs/swagger";
 
 import type { UserDTO } from "@pickleball/shared";
@@ -7,7 +7,6 @@ import { AuthGuard } from "../../auth/auth.guard.js";
 import { CurrentAuth } from "../../auth/current-auth.decorator.js";
 import type { AuthContext } from "../../auth/auth.types.js";
 import { UserResponseDto } from "./me.dto.js";
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- Nest injects UsersService by class reference
 import { UsersService } from "./users.service.js";
 
 @ApiTags("me")
@@ -15,7 +14,7 @@ import { UsersService } from "./users.service.js";
 @UseGuards(AuthGuard)
 @Controller("me")
 export class MeController {
-  constructor(private readonly users: UsersService) {}
+  constructor(@Inject(UsersService) private readonly users: UsersService) {}
 
   @Get()
   @ApiOkResponse({ type: UserResponseDto })

@@ -1,16 +1,36 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
-import { verifyToken } from "@clerk/backend";
+import { createClerkClient, verifyToken } from "@clerk/backend";
 
 import type { AuthContext, AuthProviderId } from "./auth.types.js";
 import type { AuthPort } from "./auth.port.js";
 import { loadEnv } from "../env.js";
 
+function emailFromJwtPayload(record: Record<string, unknown>): string | null {
+  if (typeof record.email === "string") return record.email;
+  if (typeof record.primary_email_address === "string") {
+    return record.primary_email_address as string;
+  }
+  return null;
+}
+
+function emailFromClerkUser(user: {
+  primaryEmailAddressId: string | null;
+  emailAddresses: { id: string; emailAddress: string }[];
+}): string | null {
+  const primaryId = user.primaryEmailAddressId;
+  const list = user.emailAddresses ?? [];
+  const primary = primaryId ? list.find((e) => e.id === primaryId)?.emailAddress : null;
+  return primary ?? list[0]?.emailAddress ?? null;
+}
+
 @Injectable()
 export class ClerkAuthVerifier implements AuthPort {
   private readonly secretKey: string;
+  private readonly clerkClient: ReturnType<typeof createClerkClient>;
 
   constructor() {
     this.secretKey = loadEnv().CLERK_SECRET_KEY;
+    this.clerkClient = createClerkClient({ secretKey: this.secretKey });
   }
 
   async verifyBearerToken(rawToken: string): Promise<AuthContext> {
@@ -26,15 +46,21 @@ export class ClerkAuthVerifier implements AuthPort {
 
       const record = payload as Record<string, unknown>;
 
-      const email =
-        typeof record.email === "string"
-          ? record.email
-          : typeof record.primary_email_address === "string"
-            ? (record.primary_email_address as string)
-            : null;
+      let email = emailFromJwtPayload(record);
 
       if (!email) {
-        throw new UnauthorizedException("Invalid token: missing email claim");
+        try {
+          const user = await this.clerkClient.users.getUser(sub);
+          email = emailFromClerkUser(user);
+        } catch {
+          email = null;
+        }
+      }
+
+      if (!email) {
+        throw new UnauthorizedException(
+          "Invalid token: missing email (add email to the Clerk session token under Sessions → Customize session token, or ensure the user has an email in Clerk)",
+        );
       }
 
       const name = typeof record.name === "string" ? (record.name as string) : null;
