@@ -1,13 +1,14 @@
 import { Module } from "@nestjs/common";
 
 import { ShotEventsModule } from "../shot-events/shot-events.module.js";
+import { SuggestedShotEventsModule } from "../suggested-shot-events/suggested-shot-events.module.js";
 import { StorageModule } from "../../storage/storage.module.js";
 import { UsersModule } from "../users/users.module.js";
 import { VideosController } from "./videos.controller.js";
 import { VideosService } from "./videos.service.js";
 
 @Module({
-  imports: [UsersModule, StorageModule, ShotEventsModule],
+  imports: [UsersModule, StorageModule, ShotEventsModule, SuggestedShotEventsModule],
   controllers: [VideosController],
   providers: [VideosService],
 })

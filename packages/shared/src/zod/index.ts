@@ -14,6 +14,8 @@ import {
   SHOT_OUTCOMES,
   SHOT_SIDES,
   SHOT_TYPES,
+  SUGGESTED_SHOT_SOURCES,
+  SUGGESTED_SHOT_STATUSES,
   TEAM_POSITIONS,
   TEAMS,
   VIDEO_PRIVACY,
@@ -30,6 +32,8 @@ export const zShotSide = z.enum(SHOT_SIDES);
 export const zShotOutcome = z.enum(SHOT_OUTCOMES);
 export const zCourtZone = z.enum(COURT_ZONES);
 export const zShotEventSource = z.enum(SHOT_EVENT_SOURCES);
+export const zSuggestedShotSource = z.enum(SUGGESTED_SHOT_SOURCES);
+export const zSuggestedShotStatus = z.enum(SUGGESTED_SHOT_STATUSES);
 export const zMatchType = z.enum(MATCH_TYPES);
 export const zTeam = z.enum(TEAMS);
 export const zTeamPosition = z.enum(TEAM_POSITIONS);
@@ -210,3 +214,33 @@ export const zShotEventDTO = z.object({
   updatedAt: zIsoDateTime,
 });
 export type ShotEventDTOValidated = z.infer<typeof zShotEventDTO>;
+
+export const zSuggestedShotEventDTO = z.object({
+  id: zUuid,
+  videoId: zUuid,
+  timestampSeconds: z.number(),
+  confidence: z.number().min(0).max(1),
+  source: zSuggestedShotSource,
+  status: zSuggestedShotStatus,
+  createdAt: zIsoDateTime,
+  updatedAt: zIsoDateTime,
+});
+export type SuggestedShotEventDTOValidated = z.infer<typeof zSuggestedShotEventDTO>;
+
+/** `PATCH /v1/suggested-shot-events/:id` — dismiss a pending suggestion. */
+export const zUpdateSuggestedShotBody = z.object({
+  status: z.literal("rejected"),
+});
+export type UpdateSuggestedShotBody = z.infer<typeof zUpdateSuggestedShotBody>;
+
+/** `POST .../convert` — optional classification; defaults applied server-side to `unknown` if omitted. */
+export const zConvertSuggestedShotBody = z.object({
+  shotType: zShotType.optional(),
+  side: zShotSide.optional(),
+  outcome: zShotOutcome.optional(),
+  note: z.string().max(2000).nullable().optional(),
+});
+export type ConvertSuggestedShotBody = z.infer<typeof zConvertSuggestedShotBody>;
+
+export const zSuggestedShotListFilter = z.union([zSuggestedShotStatus, z.literal("all")]);
+export type SuggestedShotListFilterValidated = z.infer<typeof zSuggestedShotListFilter>;

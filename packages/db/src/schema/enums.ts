@@ -18,6 +18,8 @@ import {
   SHOT_OUTCOMES,
   SHOT_SIDES,
   SHOT_TYPES,
+  SUGGESTED_SHOT_SOURCES,
+  SUGGESTED_SHOT_STATUSES,
   TEAM_POSITIONS,
   TEAMS,
   VIDEO_PRIVACY,
@@ -36,3 +38,5 @@ export const shotSideEnum = pgEnum("shot_side", SHOT_SIDES);
 export const shotOutcomeEnum = pgEnum("shot_outcome", SHOT_OUTCOMES);
 export const courtZoneEnum = pgEnum("court_zone", COURT_ZONES);
 export const shotEventSourceEnum = pgEnum("shot_event_source", SHOT_EVENT_SOURCES);
+export const suggestedShotSourceEnum = pgEnum("suggested_shot_source", SUGGESTED_SHOT_SOURCES);
+export const suggestedShotStatusEnum = pgEnum("suggested_shot_status", SUGGESTED_SHOT_STATUSES);

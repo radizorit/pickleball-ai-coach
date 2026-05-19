@@ -10,6 +10,7 @@ import type { Video } from "@pickleball/db/schema";
 import { claimNextVideo } from "./claim.js";
 import type { WorkerEnv } from "./env.js";
 import { downloadObjectToFile, uploadJpegFile } from "./s3-client.js";
+import { runHeuristicSuggestedShots } from "./heuristic-suggested-shots.js";
 import { ffmpegThumbnailJpeg, ffprobeVideoMeta } from "./media.js";
 
 const FAILURE_MAX_LEN = 4000;
@@ -66,6 +67,22 @@ export async function processVideoJob(params: {
     await downloadObjectToFile({ client: s3, bucket, key: sourceKey, destPath: inputPath });
 
     const meta = await ffprobeVideoMeta(env, inputPath);
+
+    try {
+      const n = await runHeuristicSuggestedShots({
+        db: getDb(),
+        env,
+        videoId: video.id,
+        inputPath,
+        durationSeconds: meta.durationSeconds,
+      });
+      if (n > 0) {
+        console.info(`[worker] heuristic suggestions: ${n} candidates for video ${video.id}`);
+      }
+    } catch (err) {
+      console.error(`[worker] heuristic suggestions skipped for ${video.id}:`, err);
+    }
+
     await ffmpegThumbnailJpeg({
       env,
       inputPath,

@@ -105,7 +105,7 @@ pnpm db:seed
 ## Video records (upload foundation)
 
 - **Web:** `/videos`, `/videos/new` (create via **YouTube link** or **file upload** with progress),
-  `/videos/:id` detail, **`/videos/:id/review`** (manual shot tagging + timeline + **rule-based coaching feedback** from tags).
+  `/videos/:id` detail, **`/videos/:id/review`** (manual shot tagging, **heuristic suggested moments** on uploads, timeline + **rule-based coaching feedback** from tags).
 - **YouTube link (quick testing):** On `/videos/new`, choose **YouTube link**, paste a watch URL
   (`youtube.com`, `youtu.be`, etc.). The API stores `youtubeUrl`, sets **`processingStatus` to
   `ready` immediately** (no S3 object, no worker job). The detail page uses an **embed** and
@@ -119,6 +119,8 @@ pnpm db:seed
   (signed GET for S3-backed media),
   **`GET/POST /v1/videos/:id/shot-events`**, **`PATCH/DELETE /v1/shot-events/:eventId`**
   (manual tags; ownership via `videos.user_id`) — all require a Clerk JWT. DTOs live in `@pickleball/shared`.
+  **Suggested shots (upload path):** `GET /v1/videos/:id/suggested-shot-events` (optional `?status=`), **`PATCH /v1/suggested-shot-events/:id`** (`{ "status": "rejected" }` only),
+  **`POST /v1/videos/:videoId/suggested-shot-events/:id/convert`** (creates a manual `shot_events` row and marks the suggestion accepted).
 - **Upload flow:** `pending` → (presign) → `uploading` → (browser PUT to presigned URL) →
   `complete-upload` → `uploaded` (API verifies size via `HeadObject`) →
   **`processing` → `ready`** (worker: ffprobe + poster `poster.jpg`) or **`failed`**.
@@ -138,6 +140,15 @@ pnpm db:seed
   stored on the row as `thumbnailObjectKey`.
 - **R2 / S3 CORS:** allow `PUT` from your web origin on the bucket; for `<video>` / Range requests,
   allow `GET` from browser origins (or use a CDN origin later). Expose `ETag` if you need multipart.
+
+## Suggested shots (heuristic v1)
+
+1. **Detection:** After the worker downloads the upload, it runs **ffmpeg scene-change** detection (`select='gt(scene,T)'` + `showinfo`), parses `pts_time` from stderr, merges nearby hits (~0.35s), caps the list (~40), and maps scene strength to a **confidence** in `[0, 1]`. Failures are logged and **do not** fail the job.
+2. **Storage:** Rows live in **`suggested_shot_events`** with `source` (e.g. `heuristic_v1`), `status` (`suggested` \| `accepted` \| `rejected`), and timestamps. On re-run, the worker deletes only **pending** heuristic rows for that video before inserting a fresh batch so dismissed/accepted history stays intact.
+3. **Workflow:** Review UI lists pending suggestions → **Reject** (PATCH) or **Convert** (POST), which inserts a **`shot_events`** row (`source: manual`, note references the suggestion id) and sets the suggestion to **`accepted`**.
+4. **Limits:** No shot classification or rally context in this slice; **camera cuts are not always shots**. **YouTube-linked videos** skip the heuristic (no local file in this pipeline) — the API returns an empty list for them.
+5. **Future ML:** Replace or supplement `apps/worker/src/heuristic-suggested-shots.ts` with model inference writing the same table under a new `source` (and optional JSON `payload` column later).
+6. **Next task ideas:** “Re-run suggestions” for already-`ready` uploads, an **audio-energy** heuristic pass, or a foreign key from `shot_events` to `suggested_shot_events.id` for audit.
 
 ## Local development
 

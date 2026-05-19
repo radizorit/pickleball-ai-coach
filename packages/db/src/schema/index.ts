@@ -3,3 +3,4 @@ export * from "./users.js";
 export * from "./organizations.js";
 export * from "./videos.js";
 export * from "./shot-events.js";
+export * from "./suggested-shot-events.js";

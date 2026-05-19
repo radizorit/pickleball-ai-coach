@@ -7,6 +7,8 @@ import type {
   ShotOutcome,
   ShotSide,
   ShotType,
+  SuggestedShotSource,
+  SuggestedShotStatus,
   Team,
   TeamPosition,
   VideoPrivacy,
@@ -137,6 +139,18 @@ export interface ShotEventDTO {
   note: string | null;
   source: ShotEventSource;
   createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Heuristic (or future ML) shot moment candidate — not a confirmed tag until converted. */
+export interface SuggestedShotEventDTO {
+  id: string;
+  videoId: string;
+  timestampSeconds: number;
+  confidence: number;
+  source: SuggestedShotSource;
+  status: SuggestedShotStatus;
   createdAt: string;
   updatedAt: string;
 }

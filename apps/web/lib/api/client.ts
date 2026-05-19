@@ -8,16 +8,19 @@ import type {
   ApiError,
   HealthResponse,
   ShotEventDTO,
+  SuggestedShotEventDTO,
   UserDTO,
   VideoDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
 } from "@pickleball/shared";
 import type {
+  ConvertSuggestedShotBody,
   CreateShotEventBody,
   CreateVideoBody,
   PresignVideoUploadBody,
   UpdateShotEventBody,
+  UpdateSuggestedShotBody,
 } from "@pickleball/shared/zod";
 
 export type GetTokenFn = () => Promise<string | null>;
@@ -120,6 +123,30 @@ export function createApiClient(options: ApiClientOptions = {}) {
     videosShotEventsCreate: (videoId: string, body: CreateShotEventBody) =>
       request<ShotEventDTO>(`/v1/videos/${encodeURIComponent(videoId)}/shot-events`, {
         method: "POST",
+        body: JSON.stringify(body),
+      }),
+    videosSuggestedShotEventsList: (
+      videoId: string,
+      status?: "suggested" | "accepted" | "rejected" | "all",
+    ) => {
+      const st = status ?? "suggested";
+      const q = st === "suggested" ? "" : `?status=${encodeURIComponent(st)}`;
+      return request<SuggestedShotEventDTO[]>(
+        `/v1/videos/${encodeURIComponent(videoId)}/suggested-shot-events${q}`,
+      );
+    },
+    videosSuggestedShotEventConvert: (
+      videoId: string,
+      suggestionId: string,
+      body?: ConvertSuggestedShotBody,
+    ) =>
+      request<{ shot: ShotEventDTO; suggestion: SuggestedShotEventDTO }>(
+        `/v1/videos/${encodeURIComponent(videoId)}/suggested-shot-events/${encodeURIComponent(suggestionId)}/convert`,
+        { method: "POST", body: JSON.stringify(body ?? {}) },
+      ),
+    suggestedShotEventsReject: (suggestionId: string, body: UpdateSuggestedShotBody) =>
+      request<SuggestedShotEventDTO>(`/v1/suggested-shot-events/${encodeURIComponent(suggestionId)}`, {
+        method: "PATCH",
         body: JSON.stringify(body),
       }),
     shotEventsUpdate: (eventId: string, body: UpdateShotEventBody) =>

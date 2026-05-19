@@ -18,12 +18,20 @@ import {
   ApiQuery,
   ApiTags,
 } from "@nestjs/swagger";
-import type { ShotEventDTO, VideoDTO, VideoPresignedReadDTO, VideoPresignedUploadDTO } from "@pickleball/shared";
-import { SHOT_OUTCOMES, SHOT_SIDES, SHOT_TYPES } from "@pickleball/shared/constants";
+import type {
+  ShotEventDTO,
+  SuggestedShotEventDTO,
+  VideoDTO,
+  VideoPresignedReadDTO,
+  VideoPresignedUploadDTO,
+} from "@pickleball/shared";
+import { SHOT_OUTCOMES, SHOT_SIDES, SHOT_TYPES, SUGGESTED_SHOT_STATUSES } from "@pickleball/shared/constants";
 import {
+  zConvertSuggestedShotBody,
   zCreateShotEventBody,
   zCreateVideoBody,
   zPresignVideoUploadBody,
+  zSuggestedShotListFilter,
   zVideoReadAsset,
 } from "@pickleball/shared/zod";
 
@@ -32,6 +40,11 @@ import { CurrentAuth } from "../../auth/current-auth.decorator.js";
 import type { AuthContext } from "../../auth/auth.types.js";
 import { ShotEventResponseDto } from "../shot-events/shot-events.dto.js";
 import { ShotEventsService } from "../shot-events/shot-events.service.js";
+import {
+  ConvertSuggestedShotResponseDto,
+  SuggestedShotEventResponseDto,
+} from "../suggested-shot-events/suggested-shot-events.dto.js";
+import { SuggestedShotEventsService } from "../suggested-shot-events/suggested-shot-events.service.js";
 import {
   VideoPresignedReadResponseDto,
   VideoPresignedUploadResponseDto,
@@ -47,6 +60,7 @@ export class VideosController {
   constructor(
     @Inject(VideosService) private readonly videosService: VideosService,
     @Inject(ShotEventsService) private readonly shotEvents: ShotEventsService,
+    @Inject(SuggestedShotEventsService) private readonly suggestedShots: SuggestedShotEventsService,
   ) {}
 
   @Get()
@@ -195,6 +209,61 @@ export class VideosController {
       });
     }
     return this.shotEvents.createForVideo(auth, id, parsed.data);
+  }
+
+  @Get(":id/suggested-shot-events")
+  @ApiQuery({
+    name: "status",
+    required: false,
+    description: "Filter by suggestion status. Omit for `suggested` only.",
+    enum: [...SUGGESTED_SHOT_STATUSES, "all"],
+  })
+  @ApiOkResponse({ type: SuggestedShotEventResponseDto, isArray: true })
+  listSuggestedShotEvents(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query("status") statusRaw?: string,
+  ): Promise<SuggestedShotEventDTO[]> {
+    const effective = statusRaw === undefined || statusRaw === "" ? "suggested" : statusRaw;
+    const parsed = zSuggestedShotListFilter.safeParse(effective);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Invalid status filter",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.suggestedShots.listForVideo(auth, id, parsed.data);
+  }
+
+  @Post(":id/suggested-shot-events/:suggestionId/convert")
+  @ApiOkResponse({ type: ConvertSuggestedShotResponseDto })
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        shotType: { type: "string", enum: [...SHOT_TYPES] },
+        side: { type: "string", enum: [...SHOT_SIDES] },
+        outcome: { type: "string", enum: [...SHOT_OUTCOMES] },
+        note: { type: "string", nullable: true },
+      },
+    },
+  })
+  convertSuggestedShotEvent(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Param("suggestionId", new ParseUUIDPipe()) suggestionId: string,
+    @Body() body: unknown,
+  ): Promise<{ shot: ShotEventDTO; suggestion: SuggestedShotEventDTO }> {
+    const parsed = zConvertSuggestedShotBody.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.suggestedShots.convertSuggestion(auth, id, suggestionId, parsed.data);
   }
 
   @Get(":id")
