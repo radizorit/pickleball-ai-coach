@@ -14,6 +14,12 @@ export type SuggestionHeuristicConfig = {
   minConfidence: number;
   maxSuggestions: number;
   weights: { scene: number; audio: number; motion: number };
+  /**
+   * When > 0, scene/motion filters use `fps=N` before `select` so consecutive *decoded*
+   * frames are compared (fixes sparse keyframe / long-GOP decode where `scene` rarely fires).
+   * Set `SUGGESTION_SCENE_SAMPLE_FPS=0` to force full-rate decode (slow on long clips).
+   */
+  sceneSampleFps: number | null;
 };
 
 function envNum(key: string, fallback: number): number {
@@ -27,6 +33,13 @@ export function loadSuggestionHeuristicConfig(_env?: SuggestionMediaEnv): Sugges
   const maxSpacingRaw = process.env.SUGGESTION_MAX_SPACING_SEC;
   const maxSpacing =
     maxSpacingRaw != null && maxSpacingRaw !== "" ? Number(maxSpacingRaw) : null;
+
+  const sampleRaw = process.env.SUGGESTION_SCENE_SAMPLE_FPS;
+  let sceneSampleFps: number | null = 8;
+  if (sampleRaw != null && sampleRaw !== "") {
+    const n = Number(sampleRaw);
+    sceneSampleFps = Number.isFinite(n) && n > 0 ? n : null;
+  }
 
   return {
     sceneThreshold: envNum("SUGGESTION_SCENE_THRESHOLD", 0.28),
@@ -42,5 +55,6 @@ export function loadSuggestionHeuristicConfig(_env?: SuggestionMediaEnv): Sugges
       audio: envNum("SUGGESTION_WEIGHT_AUDIO", 0.4),
       motion: envNum("SUGGESTION_WEIGHT_MOTION", 0.25),
     },
+    sceneSampleFps,
   };
 }

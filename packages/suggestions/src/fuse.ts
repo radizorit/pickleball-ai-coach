@@ -147,12 +147,15 @@ export function applyMaxSpacingGap(
     const prev = sorted[i - 1];
     const next = sorted[i + 1];
     const cur = sorted[i]!;
-    const gapPrev = prev ? cur.timestampSeconds - prev.timestampSeconds : Infinity;
-    const gapNext = next ? next.timestampSeconds - cur.timestampSeconds : Infinity;
-    const minGap = Math.min(gapPrev, gapNext);
-    if (minGap > maxSpacingSec) {
-      suppressed += 1;
-      continue;
+    // Only treat as "isolated" when both neighbors exist; otherwise boundary points
+    // would use Infinity min() and get wrongly dropped on sparse timelines.
+    if (prev && next) {
+      const gapPrev = cur.timestampSeconds - prev.timestampSeconds;
+      const gapNext = next.timestampSeconds - cur.timestampSeconds;
+      if (gapPrev > maxSpacingSec && gapNext > maxSpacingSec) {
+        suppressed += 1;
+        continue;
+      }
     }
     kept.push(cur);
   }
@@ -211,6 +214,8 @@ export function fuseSignalHits(
     stats: {
       rawCandidateCount: normalized.length,
       mergedClusterCount: clusters.length,
+      afterConfidenceCount: fused.length,
+      afterMaxGapCount: afterGap.length,
       suppressedBelowThreshold,
       suppressedSpacing: suppressedSpacing + gapSuppressed,
       suppressedMaxCount,

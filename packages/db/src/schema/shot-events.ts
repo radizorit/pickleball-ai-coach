@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   doublePrecision,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -13,7 +15,9 @@ import {
   shotOutcomeEnum,
   shotSideEnum,
   shotTypeEnum,
+  videoPlayerSlotEnum,
 } from "./enums.js";
+import { rallies } from "./rallies.js";
 import { suggestedShotEvents } from "./suggested-shot-events.js";
 import { users } from "./users.js";
 import { videos } from "./videos.js";
@@ -29,15 +33,16 @@ export const shotEvents = pgTable(
     videoId: uuid("video_id")
       .notNull()
       .references(() => videos.id, { onDelete: "cascade" }),
-    /** Nullable until rally segmentation exists; no FK yet. */
-    rallyId: uuid("rally_id"),
+    rallyId: uuid("rally_id").references(() => rallies.id, { onDelete: "set null" }),
+    playerSlot: videoPlayerSlotEnum("player_slot"),
+    shotIndexInRally: integer("shot_index_in_rally"),
+    endsRally: boolean("ends_rally").notNull().default(false),
     timestampSeconds: doublePrecision("timestamp_seconds").notNull(),
     shotType: shotTypeEnum("shot_type").notNull(),
     side: shotSideEnum("shot_side").notNull(),
     outcome: shotOutcomeEnum("shot_outcome").notNull(),
     note: text("note"),
     source: shotEventSourceEnum("source").notNull().default("manual"),
-    /** Set when this tag was created from a suggestion (audit / training labels). */
     suggestedShotEventId: uuid("suggested_shot_event_id").references(() => suggestedShotEvents.id, {
       onDelete: "set null",
     }),
@@ -58,6 +63,7 @@ export const shotEvents = pgTable(
     ),
     videoCreatedIdx: index("shot_events_video_created_idx").on(table.videoId, table.createdAt),
     suggestedShotIdx: index("shot_events_suggested_shot_event_id_idx").on(table.suggestedShotEventId),
+    rallyIdx: index("shot_events_rally_idx").on(table.rallyId, table.shotIndexInRally),
   }),
 );
 

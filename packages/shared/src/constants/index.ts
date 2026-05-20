@@ -56,7 +56,7 @@ export const SHOT_EVENT_SOURCES = ["manual", "ai_suggested", "ai_accepted", "ai_
 export type ShotEventSource = (typeof SHOT_EVENT_SOURCES)[number];
 
 /** Worker/API-generated shot *candidates* (separate from confirmed `shot_events`). */
-export const SUGGESTED_SHOT_SOURCES = ["heuristic_v1"] as const;
+export const SUGGESTED_SHOT_SOURCES = ["heuristic_v1", "heuristic_v2"] as const;
 export type SuggestedShotSource = (typeof SUGGESTED_SHOT_SOURCES)[number];
 
 export const SUGGESTED_SHOT_STATUSES = ["suggested", "accepted", "rejected"] as const;
@@ -73,6 +73,17 @@ export type TeamPosition = (typeof TEAM_POSITIONS)[number];
 
 export const RALLY_RESULTS = ["winner", "forced_error", "unforced_error", "let", "fault"] as const;
 export type RallyResult = (typeof RALLY_RESULTS)[number];
+
+/** Video-scoped player slots (singles MVP: player_1 / player_2; doubles later). */
+export const VIDEO_PLAYER_SLOTS = ["player_1", "player_2", "player_3", "player_4"] as const;
+export type VideoPlayerSlot = (typeof VIDEO_PLAYER_SLOTS)[number];
+
+/** Why a rally ended (`rallies.end_reason`), distinct from shot `outcome`. */
+export const RALLY_END_REASONS = ["winner", "error", "unknown"] as const;
+export type RallyEndReason = (typeof RALLY_END_REASONS)[number];
+
+/** Default slots seeded per video for singles tagging. */
+export const DEFAULT_VIDEO_PLAYER_SLOTS = ["player_1", "player_2"] as const satisfies readonly VideoPlayerSlot[];
 
 /** Full video lifecycle: DB row → client upload → object stored → worker → playable (or failed). */
 export const PROCESSING_STATUSES = [

@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -19,29 +20,46 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import type {
+  RallyConsistencyStatsDTO,
   ShotEventDTO,
   SuggestedShotEventDTO,
   SuggestedShotRegenerateSummaryDTO,
   SuggestedShotStatsDTO,
   VideoDTO,
+  VideoPlayerDTO,
+  VideoRallyDTO,
   VideoTrainingExportDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
 } from "@pickleball/shared";
-import { SHOT_OUTCOMES, SHOT_SIDES, SHOT_TYPES, SUGGESTED_SHOT_STATUSES } from "@pickleball/shared/constants";
+import {
+  SHOT_OUTCOMES,
+  SHOT_SIDES,
+  SHOT_TYPES,
+  SUGGESTED_SHOT_STATUSES,
+  VIDEO_PLAYER_SLOTS,
+} from "@pickleball/shared/constants";
 import {
   zConvertSuggestedShotBatchBody,
   zConvertSuggestedShotBody,
+  zCreateRallyBody,
   zCreateShotEventBody,
   zCreateVideoBody,
   zPresignVideoUploadBody,
   zSuggestedShotListFilter,
+  zUpsertVideoPlayersBody,
   zVideoReadAsset,
 } from "@pickleball/shared/zod";
 
 import { AuthGuard } from "../../auth/auth.guard.js";
 import { CurrentAuth } from "../../auth/current-auth.decorator.js";
 import type { AuthContext } from "../../auth/auth.types.js";
+import {
+  RallyConsistencyStatsResponseDto,
+  VideoPlayerResponseDto,
+  VideoRallyResponseDto,
+} from "../rallies/rallies.dto.js";
+import { RalliesService } from "../rallies/rallies.service.js";
 import { ShotEventResponseDto } from "../shot-events/shot-events.dto.js";
 import { ShotEventsService } from "../shot-events/shot-events.service.js";
 import {
@@ -67,6 +85,7 @@ import { VideosService } from "./videos.service.js";
 export class VideosController {
   constructor(
     @Inject(VideosService) private readonly videosService: VideosService,
+    @Inject(RalliesService) private readonly rallies: RalliesService,
     @Inject(ShotEventsService) private readonly shotEvents: ShotEventsService,
     @Inject(SuggestedShotEventsService) private readonly suggestedShots: SuggestedShotEventsService,
   ) {}
@@ -178,6 +197,79 @@ export class VideosController {
     return this.videosService.presignReadForUser(auth, id, parsed.data);
   }
 
+  @Get(":id/players")
+  @ApiOkResponse({ type: VideoPlayerResponseDto, isArray: true })
+  listPlayers(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<VideoPlayerDTO[]> {
+    return this.rallies.listPlayers(auth, id);
+  }
+
+  @Put(":id/players")
+  @ApiOkResponse({ type: VideoPlayerResponseDto, isArray: true })
+  upsertPlayers(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ): Promise<VideoPlayerDTO[]> {
+    const parsed = zUpsertVideoPlayersBody.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.rallies.upsertPlayers(auth, id, parsed.data);
+  }
+
+  @Get(":id/rallies")
+  @ApiOkResponse({ type: VideoRallyResponseDto, isArray: true })
+  listRallies(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<VideoRallyDTO[]> {
+    return this.rallies.listRallies(auth, id);
+  }
+
+  @Post(":id/rallies")
+  @ApiOkResponse({ type: VideoRallyResponseDto })
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["startTimeSeconds"],
+      properties: {
+        startTimeSeconds: { type: "number", minimum: 0 },
+        endTimeSeconds: { type: "number", minimum: 0, nullable: true },
+      },
+    },
+  })
+  createRally(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ): Promise<VideoRallyDTO> {
+    const parsed = zCreateRallyBody.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.rallies.createRally(auth, id, parsed.data);
+  }
+
+  @Get(":id/rally-consistency")
+  @ApiOkResponse({ type: RallyConsistencyStatsResponseDto })
+  rallyConsistency(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<RallyConsistencyStatsDTO> {
+    return this.rallies.consistencyForVideo(auth, id);
+  }
+
   @Get(":id/shot-events")
   @ApiOkResponse({ type: ShotEventResponseDto, isArray: true })
   listShotEvents(
@@ -200,6 +292,8 @@ export class VideosController {
         outcome: { type: "string", enum: [...SHOT_OUTCOMES] },
         note: { type: "string", nullable: true },
         rallyId: { type: "string", format: "uuid", nullable: true },
+        playerSlot: { type: "string", enum: [...VIDEO_PLAYER_SLOTS], nullable: true },
+        endsRally: { type: "boolean" },
       },
     },
   })

@@ -1,6 +1,12 @@
 import { ApiProperty } from "@nestjs/swagger";
 
-import { SHOT_EVENT_SOURCES, SHOT_OUTCOMES, SHOT_SIDES, SHOT_TYPES } from "@pickleball/shared/constants";
+import {
+  SHOT_EVENT_SOURCES,
+  SHOT_OUTCOMES,
+  SHOT_SIDES,
+  SHOT_TYPES,
+  VIDEO_PLAYER_SLOTS,
+} from "@pickleball/shared/constants";
 import type { ShotEventDTO } from "@pickleball/shared";
 
 export class ShotEventResponseDto implements ShotEventDTO {
@@ -12,6 +18,15 @@ export class ShotEventResponseDto implements ShotEventDTO {
 
   @ApiProperty({ type: String, format: "uuid", nullable: true })
   rallyId!: string | null;
+
+  @ApiProperty({ enum: VIDEO_PLAYER_SLOTS, nullable: true })
+  playerSlot!: ShotEventDTO["playerSlot"];
+
+  @ApiProperty({ type: Number, nullable: true })
+  shotIndexInRally!: number | null;
+
+  @ApiProperty({ type: Boolean })
+  endsRally!: boolean;
 
   @ApiProperty({ type: Number })
   timestampSeconds!: number;

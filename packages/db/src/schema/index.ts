@@ -2,5 +2,7 @@ export * from "./enums.js";
 export * from "./users.js";
 export * from "./organizations.js";
 export * from "./videos.js";
+export * from "./video-players.js";
+export * from "./rallies.js";
 export * from "./shot-events.js";
 export * from "./suggested-shot-events.js";

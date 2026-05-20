@@ -43,6 +43,20 @@
       "when": 1739836800008,
       "tag": "0006_shot_events_suggestion_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1739836800009,
+      "tag": "0007_suggested_shot_source_heuristic_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1739836800010,
+      "tag": "0008_video_players_rallies",
+      "breakpoints": true
     }
   ]
 }

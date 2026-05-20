@@ -11,6 +11,12 @@ import {
 } from "@nestjs/common";
 
 import type { AuthContext } from "../../auth/auth.types.js";
+import {
+  applyEndsRallyToShot,
+  assertRallyBelongsToVideo,
+  nextShotIndexInRally,
+  recomputeShotIndicesInRally,
+} from "../rallies/rally-shot-helpers.js";
 import { UsersService } from "../users/users.service.js";
 import { shotEventToDto } from "./shot-event-mapper.js";
 
@@ -50,24 +56,53 @@ export class ShotEventsService {
     await this.assertVideoOwned(auth, videoId);
     const userId = await this.users.resolveDbUserId(auth);
     const db = getDb();
-    const [row] = await db
-      .insert(shotEvents)
-      .values({
-        videoId,
-        rallyId: body.rallyId ?? null,
-        timestampSeconds: body.timestampSeconds,
-        shotType: body.shotType,
-        side: body.side,
-        outcome: body.outcome,
-        note: body.note?.trim() ? body.note.trim() : null,
-        source: "manual",
-        createdByUserId: userId,
-      })
-      .returning();
-    if (!row) {
-      throw new BadRequestException("Could not create shot event");
-    }
-    return shotEventToDto(row);
+
+    return db.transaction(async (tx) => {
+      const rallyId = body.rallyId ?? null;
+      let shotIndexInRally: number | null = null;
+      let endsRally = body.endsRally ?? false;
+
+      if (rallyId) {
+        const rally = await assertRallyBelongsToVideo(tx, rallyId, videoId);
+        if (rally.endTimeSeconds != null && !endsRally) {
+          throw new BadRequestException("Rally is already closed; mark endsRally or open a new rally");
+        }
+        shotIndexInRally = await nextShotIndexInRally(tx, rallyId);
+      } else {
+        endsRally = false;
+      }
+
+      const [row] = await tx
+        .insert(shotEvents)
+        .values({
+          videoId,
+          rallyId,
+          playerSlot: body.playerSlot ?? null,
+          shotIndexInRally,
+          endsRally,
+          timestampSeconds: body.timestampSeconds,
+          shotType: body.shotType,
+          side: body.side,
+          outcome: body.outcome,
+          note: body.note?.trim() ? body.note.trim() : null,
+          source: "manual",
+          createdByUserId: userId,
+        })
+        .returning();
+      if (!row) {
+        throw new BadRequestException("Could not create shot event");
+      }
+
+      if (rallyId && endsRally) {
+        const rally = await assertRallyBelongsToVideo(tx, rallyId, videoId);
+        await applyEndsRallyToShot(tx, rally, row);
+      } else if (rallyId) {
+        await recomputeShotIndicesInRally(tx, rallyId);
+      }
+
+      const [final] = await tx.select().from(shotEvents).where(eq(shotEvents.id, row.id)).limit(1);
+      return shotEventToDto(final ?? row);
+    });
   }
 
   async updateEvent(
@@ -79,8 +114,7 @@ export class ShotEventsService {
     const db = getDb();
     const [existing] = await db
       .select({
-        id: shotEvents.id,
-        videoId: shotEvents.videoId,
+        shot: shotEvents,
         ownerId: videos.userId,
       })
       .from(shotEvents)
@@ -94,27 +128,65 @@ export class ShotEventsService {
       throw new ForbiddenException("You do not own this video");
     }
 
-    const [updated] = await db
-      .update(shotEvents)
-      .set({
-        ...(body.timestampSeconds !== undefined
-          ? { timestampSeconds: body.timestampSeconds }
-          : {}),
-        ...(body.shotType !== undefined ? { shotType: body.shotType } : {}),
-        ...(body.side !== undefined ? { side: body.side } : {}),
-        ...(body.outcome !== undefined ? { outcome: body.outcome } : {}),
-        ...(body.note !== undefined
-          ? { note: body.note?.trim() ? body.note.trim() : null }
-          : {}),
-        ...(body.rallyId !== undefined ? { rallyId: body.rallyId } : {}),
-        updatedAt: sql`now()`,
-      })
-      .where(eq(shotEvents.id, eventId))
-      .returning();
-    if (!updated) {
-      throw new NotFoundException("Shot event not found");
-    }
-    return shotEventToDto(updated);
+    const prev = existing.shot;
+    const videoId = prev.videoId;
+    const newRallyId = body.rallyId !== undefined ? body.rallyId : prev.rallyId;
+    const newEndsRally = body.endsRally !== undefined ? body.endsRally : prev.endsRally;
+
+    return db.transaction(async (tx) => {
+      if (newRallyId) {
+        await assertRallyBelongsToVideo(tx, newRallyId, videoId);
+      }
+
+      const [updated] = await tx
+        .update(shotEvents)
+        .set({
+          ...(body.timestampSeconds !== undefined
+            ? { timestampSeconds: body.timestampSeconds }
+            : {}),
+          ...(body.shotType !== undefined ? { shotType: body.shotType } : {}),
+          ...(body.side !== undefined ? { side: body.side } : {}),
+          ...(body.outcome !== undefined ? { outcome: body.outcome } : {}),
+          ...(body.note !== undefined
+            ? { note: body.note?.trim() ? body.note.trim() : null }
+            : {}),
+          ...(body.rallyId !== undefined ? { rallyId: body.rallyId } : {}),
+          ...(body.playerSlot !== undefined ? { playerSlot: body.playerSlot } : {}),
+          ...(body.endsRally !== undefined ? { endsRally: body.endsRally } : {}),
+          updatedAt: sql`now()`,
+        })
+        .where(eq(shotEvents.id, eventId))
+        .returning();
+      if (!updated) {
+        throw new NotFoundException("Shot event not found");
+      }
+
+      const rallyId = updated.rallyId;
+      if (prev.rallyId && prev.rallyId !== rallyId) {
+        await recomputeShotIndicesInRally(tx, prev.rallyId);
+      }
+
+      if (rallyId) {
+        await recomputeShotIndicesInRally(tx, rallyId);
+        const [fresh] = await tx.select().from(shotEvents).where(eq(shotEvents.id, eventId)).limit(1);
+        const shotRow = fresh ?? updated;
+        if (newEndsRally) {
+          const rally = await assertRallyBelongsToVideo(tx, rallyId, videoId);
+          await applyEndsRallyToShot(tx, rally, shotRow);
+        }
+        const [final] = await tx.select().from(shotEvents).where(eq(shotEvents.id, eventId)).limit(1);
+        return shotEventToDto(final ?? shotRow);
+      }
+
+      if (prev.endsRally && prev.rallyId) {
+        await tx
+          .update(shotEvents)
+          .set({ endsRally: false, updatedAt: sql`now()` })
+          .where(eq(shotEvents.id, eventId));
+      }
+
+      return shotEventToDto(updated);
+    });
   }
 
   async deleteEvent(auth: AuthContext, eventId: string): Promise<void> {
@@ -123,6 +195,7 @@ export class ShotEventsService {
     const [existing] = await db
       .select({
         id: shotEvents.id,
+        rallyId: shotEvents.rallyId,
         ownerId: videos.userId,
       })
       .from(shotEvents)
@@ -135,6 +208,11 @@ export class ShotEventsService {
     if (existing.ownerId !== userId) {
       throw new ForbiddenException("You do not own this video");
     }
+
+    const rallyId = existing.rallyId;
     await db.delete(shotEvents).where(eq(shotEvents.id, eventId));
+    if (rallyId) {
+      await recomputeShotIndicesInRally(db, rallyId);
+    }
   }
 }

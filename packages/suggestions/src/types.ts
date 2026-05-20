@@ -24,6 +24,10 @@ export type FusedSuggestion = {
 export type FuseStats = {
   rawCandidateCount: number;
   mergedClusterCount: number;
+  /** Candidates that passed per-cluster confidence threshold (before max-gap filter). */
+  afterConfidenceCount: number;
+  /** Candidates after optional max-spacing gap filter (before min-spacing / max-count). */
+  afterMaxGapCount: number;
   suppressedBelowThreshold: number;
   suppressedSpacing: number;
   suppressedMaxCount: number;

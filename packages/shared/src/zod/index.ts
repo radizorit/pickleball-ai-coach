@@ -9,6 +9,7 @@ import {
   ORG_ROLES,
   PLANS,
   PROCESSING_STATUSES,
+  RALLY_END_REASONS,
   RALLY_RESULTS,
   SHOT_EVENT_SOURCES,
   SHOT_OUTCOMES,
@@ -18,6 +19,7 @@ import {
   SUGGESTED_SHOT_STATUSES,
   TEAM_POSITIONS,
   TEAMS,
+  VIDEO_PLAYER_SLOTS,
   VIDEO_PRIVACY,
   VIDEO_READ_ASSETS,
 } from "../constants/index.js";
@@ -38,6 +40,8 @@ export const zMatchType = z.enum(MATCH_TYPES);
 export const zTeam = z.enum(TEAMS);
 export const zTeamPosition = z.enum(TEAM_POSITIONS);
 export const zRallyResult = z.enum(RALLY_RESULTS);
+export const zVideoPlayerSlot = z.enum(VIDEO_PLAYER_SLOTS);
+export const zRallyEndReason = z.enum(RALLY_END_REASONS);
 export const zProcessingStatus = z.enum(PROCESSING_STATUSES);
 export const zVideoPrivacy = z.enum(VIDEO_PRIVACY);
 export const zPlan = z.enum(PLANS);
@@ -161,6 +165,65 @@ export type VideoPresignedReadDTOValidated = z.infer<typeof zVideoPresignedReadD
 
 export type VideoDTOValidated = z.infer<typeof zVideoDTO>;
 
+/** `PUT /v1/videos/:id/players` */
+export const zUpsertVideoPlayersBody = z.object({
+  players: z.array(
+    z.object({
+      slot: zVideoPlayerSlot,
+      displayName: z.string().max(120).nullable(),
+    }),
+  ),
+});
+export type UpsertVideoPlayersBody = z.infer<typeof zUpsertVideoPlayersBody>;
+
+export const zVideoPlayerDTO = z.object({
+  videoId: zUuid,
+  slot: zVideoPlayerSlot,
+  displayName: z.string().nullable(),
+});
+
+/** `POST /v1/videos/:id/rallies` */
+export const zCreateRallyBody = z.object({
+  startTimeSeconds: z.number().nonnegative().max(864_000),
+  endTimeSeconds: z.number().nonnegative().max(864_000).nullable().optional(),
+});
+export type CreateRallyBody = z.infer<typeof zCreateRallyBody>;
+
+/** `PATCH /v1/rallies/:rallyId` */
+export const zUpdateRallyBody = z
+  .object({
+    startTimeSeconds: z.number().nonnegative().max(864_000).optional(),
+    endTimeSeconds: z.number().nonnegative().max(864_000).nullable().optional(),
+    winningPlayerSlot: zVideoPlayerSlot.nullable().optional(),
+    endReason: zRallyEndReason.nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const has =
+      data.startTimeSeconds !== undefined ||
+      data.endTimeSeconds !== undefined ||
+      data.winningPlayerSlot !== undefined ||
+      data.endReason !== undefined;
+    if (!has) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide at least one field to update",
+      });
+    }
+  });
+export type UpdateRallyBody = z.infer<typeof zUpdateRallyBody>;
+
+export const zVideoRallyDTO = z.object({
+  id: zUuid,
+  videoId: zUuid,
+  startTimeSeconds: z.number(),
+  endTimeSeconds: z.number().nullable(),
+  winningPlayerSlot: zVideoPlayerSlot.nullable(),
+  endReason: zRallyEndReason.nullable(),
+  shotCount: z.number().int().nonnegative(),
+  createdAt: zIsoDateTime,
+  updatedAt: zIsoDateTime,
+});
+
 /** `POST /v1/videos/:id/shot-events` — server sets `source` to `manual`. */
 export const zCreateShotEventBody = z.object({
   timestampSeconds: z.number().nonnegative().max(864_000),
@@ -169,6 +232,8 @@ export const zCreateShotEventBody = z.object({
   outcome: zShotOutcome,
   note: z.string().max(2000).nullable().optional(),
   rallyId: zUuid.nullable().optional(),
+  playerSlot: zVideoPlayerSlot.nullable().optional(),
+  endsRally: z.boolean().optional(),
 });
 export type CreateShotEventBody = z.infer<typeof zCreateShotEventBody>;
 
@@ -181,6 +246,8 @@ export const zUpdateShotEventBody = z
     outcome: zShotOutcome.optional(),
     note: z.string().max(2000).nullable().optional(),
     rallyId: zUuid.nullable().optional(),
+    playerSlot: zVideoPlayerSlot.nullable().optional(),
+    endsRally: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     const has =
@@ -189,7 +256,9 @@ export const zUpdateShotEventBody = z
       data.side !== undefined ||
       data.outcome !== undefined ||
       data.note !== undefined ||
-      data.rallyId !== undefined;
+      data.rallyId !== undefined ||
+      data.playerSlot !== undefined ||
+      data.endsRally !== undefined;
     if (!has) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -203,6 +272,9 @@ export const zShotEventDTO = z.object({
   id: zUuid,
   videoId: zUuid,
   rallyId: zUuid.nullable(),
+  playerSlot: zVideoPlayerSlot.nullable(),
+  shotIndexInRally: z.number().int().positive().nullable(),
+  endsRally: z.boolean(),
   timestampSeconds: z.number(),
   shotType: zShotType,
   side: zShotSide,
@@ -215,6 +287,20 @@ export const zShotEventDTO = z.object({
   updatedAt: zIsoDateTime,
 });
 export type ShotEventDTOValidated = z.infer<typeof zShotEventDTO>;
+
+const zPlayerSlotCounts = z.record(zVideoPlayerSlot, z.number().int().nonnegative());
+
+export const zRallyConsistencyStatsDTO = z.object({
+  closedRallyCount: z.number().int().nonnegative(),
+  openRallyCount: z.number().int().nonnegative(),
+  averageRallyLength: z.number().nullable(),
+  longestRallyLength: z.number().int().nonnegative().nullable(),
+  shotsBeforeError: z.array(z.number().int().nonnegative()),
+  shotsBeforeWinner: z.array(z.number().int().nonnegative()),
+  playerWinnerCounts: zPlayerSlotCounts,
+  playerErrorCounts: zPlayerSlotCounts,
+});
+export type RallyConsistencyStatsDTOValidated = z.infer<typeof zRallyConsistencyStatsDTO>;
 
 export const zSuggestedShotRegenerateSummaryDTO = z.object({
   generatedCount: z.number().int().nonnegative(),

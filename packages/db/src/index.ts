@@ -13,4 +13,5 @@ export {
   inArray,
   isNull,
   isNotNull,
+  ne,
 } from "drizzle-orm";

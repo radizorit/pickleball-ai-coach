@@ -8,12 +8,20 @@ import { ApiClientError } from "@/lib/api/client";
 import { useAuthedApiClient } from "@/lib/api/use-authed-api-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { RallyConsistencyPanel } from "@/components/rally-consistency-panel";
+import { RallyPanel } from "@/components/rally-panel";
 import { SuggestedShotsPanel } from "@/components/suggested-shots-panel";
 import { SuggestionReviewQueue } from "@/components/suggestion-review-queue";
 import { VideoCoachingFeedbackPanel } from "@/components/video-coaching-feedback-panel";
 import { VideoShotStatsPanel } from "@/components/video-shot-stats-panel";
-import type { ShotEventDTO, SuggestedShotEventDTO, VideoDTO } from "@pickleball/shared";
-import type { ShotSide } from "@pickleball/shared/constants";
+import type {
+  ShotEventDTO,
+  SuggestedShotEventDTO,
+  VideoDTO,
+  VideoPlayerDTO,
+  VideoRallyDTO,
+} from "@pickleball/shared";
+import type { ShotSide, VideoPlayerSlot } from "@pickleball/shared/constants";
 import type { CreateShotEventBody, UpdateShotEventBody } from "@pickleball/shared/zod";
 import {
   SHOT_OUTCOMES,
@@ -34,6 +42,17 @@ function formatClock(seconds: number): string {
 function sideLabel(s: ShotSide): string {
   if (s === "n_a") return "N/A";
   return s;
+}
+
+function playerTag(
+  slot: VideoPlayerSlot | null,
+  players: VideoPlayerDTO[],
+): string | null {
+  if (!slot) return null;
+  const name = players.find((p) => p.slot === slot)?.displayName?.trim();
+  if (slot === "player_1") return name ? `P1 · ${name}` : "P1";
+  if (slot === "player_2") return name ? `P2 · ${name}` : "P2";
+  return slot;
 }
 
 function canRequestSourceRead(status: VideoDTO["processingStatus"]): boolean {
@@ -68,6 +87,24 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     enabled: videoQ.isSuccess,
   });
 
+  const playersQ = useQuery({
+    queryKey: ["videos", videoId, "players"],
+    queryFn: () => client.videosPlayersList(videoId),
+    enabled: videoQ.isSuccess,
+  });
+
+  const ralliesQ = useQuery({
+    queryKey: ["videos", videoId, "rallies"],
+    queryFn: () => client.videosRalliesList(videoId),
+    enabled: videoQ.isSuccess,
+  });
+
+  const rallyConsistencyQ = useQuery({
+    queryKey: ["videos", videoId, "rally-consistency"],
+    queryFn: () => client.videosRallyConsistency(videoId),
+    enabled: videoQ.isSuccess,
+  });
+
   const allSuggestionsQ = useQuery({
     queryKey: ["videos", videoId, "suggested-shot-events", "all"],
     queryFn: () => client.videosSuggestedShotEventsList(videoId, "all"),
@@ -82,6 +119,9 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const [side, setSide] = useState<ShotEventDTO["side"]>("unknown");
   const [outcome, setOutcome] = useState<ShotEventDTO["outcome"]>("unknown");
   const [note, setNote] = useState("");
+  const [activeRallyId, setActiveRallyId] = useState<string | null>(null);
+  const [playerSlot, setPlayerSlot] = useState<VideoPlayerSlot | null>(null);
+  const [endsRally, setEndsRally] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editShotType, setEditShotType] = useState<ShotEventDTO["shotType"]>("unknown");
@@ -89,6 +129,9 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const [editOutcome, setEditOutcome] = useState<ShotEventDTO["outcome"]>("unknown");
   const [editNote, setEditNote] = useState("");
   const [editTs, setEditTs] = useState(0);
+  const [editPlayerSlot, setEditPlayerSlot] = useState<VideoPlayerSlot | null>(null);
+  const [editEndsRally, setEditEndsRally] = useState(false);
+  const [editRallyId, setEditRallyId] = useState<string | null>(null);
 
   const durationSeconds = v?.durationSeconds ?? null;
   const timelineMax = useMemo(() => {
@@ -106,10 +149,16 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const [queueCurrentSuggestion, setQueueCurrentSuggestion] = useState<SuggestedShotEventDTO | null>(null);
   const timelineHighlightSuggestion = reviewQueueActive ? queueCurrentSuggestion : focusedSuggestion;
 
+  const invalidateRallyData = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["videos", videoId, "shot-events"] });
+    void qc.invalidateQueries({ queryKey: ["videos", videoId, "rallies"] });
+    void qc.invalidateQueries({ queryKey: ["videos", videoId, "rally-consistency"] });
+  }, [qc, videoId]);
+
   const createMut = useMutation({
     mutationFn: (body: CreateShotEventBody) => client.videosShotEventsCreate(videoId, body),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["videos", videoId, "shot-events"] });
+      invalidateRallyData();
     },
   });
 
@@ -117,7 +166,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     mutationFn: ({ id, body }: { id: string; body: UpdateShotEventBody }) =>
       client.shotEventsUpdate(id, body),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["videos", videoId, "shot-events"] });
+      invalidateRallyData();
       setEditingId(null);
     },
   });
@@ -125,7 +174,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const deleteMut = useMutation({
     mutationFn: (id: string) => client.shotEventsDelete(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["videos", videoId, "shot-events"] });
+      invalidateRallyData();
     },
   });
 
@@ -149,10 +198,24 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
       side,
       outcome,
       note: note.trim() === "" ? undefined : note.trim(),
+      rallyId: activeRallyId ?? undefined,
+      playerSlot: playerSlot ?? undefined,
+      endsRally: activeRallyId ? endsRally : undefined,
     };
     createMut.mutate(body);
     setNote("");
-  }, [activeClock, shotType, side, outcome, note, createMut]);
+    if (endsRally) setEndsRally(false);
+  }, [
+    activeClock,
+    shotType,
+    side,
+    outcome,
+    note,
+    activeRallyId,
+    playerSlot,
+    endsRally,
+    createMut,
+  ]);
 
   const quickCreate = useCallback(
     (partial: Partial<Pick<CreateShotEventBody, "shotType" | "side" | "outcome">>) => {
@@ -161,10 +224,14 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
         shotType: partial.shotType ?? "unknown",
         side: partial.side ?? "unknown",
         outcome: partial.outcome ?? "unknown",
+        rallyId: activeRallyId ?? undefined,
+        playerSlot: playerSlot ?? undefined,
+        endsRally: activeRallyId ? endsRally : undefined,
       };
       createMut.mutate(body);
+      if (endsRally) setEndsRally(false);
     },
-    [activeClock, createMut],
+    [activeClock, activeRallyId, playerSlot, endsRally, createMut],
   );
 
   useEffect(() => {
@@ -248,6 +315,9 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     setEditOutcome(ev.outcome);
     setEditNote(ev.note ?? "");
     setEditTs(ev.timestampSeconds);
+    setEditPlayerSlot(ev.playerSlot);
+    setEditEndsRally(ev.endsRally);
+    setEditRallyId(ev.rallyId);
   }, []);
 
   const saveEdit = useCallback(() => {
@@ -258,9 +328,23 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
       side: editSide,
       outcome: editOutcome,
       note: editNote.trim() === "" ? null : editNote.trim(),
+      rallyId: editRallyId,
+      playerSlot: editPlayerSlot,
+      endsRally: editRallyId ? editEndsRally : false,
     };
     updateMut.mutate({ id: editingId, body });
-  }, [editingId, editTs, editShotType, editSide, editOutcome, editNote, updateMut]);
+  }, [
+    editingId,
+    editTs,
+    editShotType,
+    editSide,
+    editOutcome,
+    editNote,
+    editRallyId,
+    editPlayerSlot,
+    editEndsRally,
+    updateMut,
+  ]);
 
   if (videoQ.isLoading) {
     return (
@@ -290,6 +374,15 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   }
 
   const events = eventsQ.data ?? [];
+  const players = playersQ.data ?? [];
+  const rallies = ralliesQ.data ?? [];
+
+  const rallyIndexById = useMemo(() => {
+    const m = new Map<string, number>();
+    rallies.forEach((r, i) => m.set(r.id, i + 1));
+    return m;
+  }, [rallies]);
+
   const busy =
     createMut.isPending || updateMut.isPending || deleteMut.isPending || trainingExportMut.isPending;
 
@@ -329,7 +422,13 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
 
       <VideoShotStatsPanel videoId={videoId} events={eventsQ.data} isLoading={eventsQ.isLoading} />
 
-      <VideoCoachingFeedbackPanel events={eventsQ.data} isLoading={eventsQ.isLoading} />
+      <RallyConsistencyPanel videoId={videoId} players={playersQ.data} />
+
+      <VideoCoachingFeedbackPanel
+        events={eventsQ.data}
+        isLoading={eventsQ.isLoading}
+        rallyStats={rallyConsistencyQ.data}
+      />
 
       {!isYoutube && (
         <SuggestionReviewQueue
@@ -460,6 +559,13 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
         </div>
 
         <div className="w-full shrink-0 space-y-4 lg:w-[380px]">
+          <RallyPanel
+            videoId={videoId}
+            activeClock={activeClock}
+            activeRallyId={activeRallyId}
+            onActiveRallyChange={setActiveRallyId}
+          />
+
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Tagging</CardTitle>
@@ -527,6 +633,33 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
                   ))}
                 </select>
               </div>
+              <div className="grid gap-2">
+                <label className="font-medium">Player</label>
+                <div className="flex gap-2">
+                  {(["player_1", "player_2"] as const).map((slot) => (
+                    <Button
+                      key={slot}
+                      type="button"
+                      size="sm"
+                      variant={playerSlot === slot ? "default" : "outline"}
+                      onClick={() => setPlayerSlot(playerSlot === slot ? null : slot)}
+                    >
+                      {slot === "player_1" ? "P1" : "P2"}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              {activeRallyId && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={endsRally}
+                    onChange={(e) => setEndsRally(e.target.checked)}
+                    className="border-input rounded"
+                  />
+                  Ends rally (closes at active clock)
+                </label>
+              )}
               <div className="grid gap-2">
                 <label className="font-medium">Note (optional)</label>
                 <textarea
@@ -628,6 +761,46 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
                           ))}
                         </select>
                       </div>
+                      <div className="flex gap-1">
+                        {(["player_1", "player_2"] as const).map((slot) => (
+                          <Button
+                            key={slot}
+                            type="button"
+                            size="sm"
+                            variant={editPlayerSlot === slot ? "default" : "outline"}
+                            onClick={() =>
+                              setEditPlayerSlot(editPlayerSlot === slot ? null : slot)
+                            }
+                          >
+                            {slot === "player_1" ? "P1" : "P2"}
+                          </Button>
+                        ))}
+                      </div>
+                      <select
+                        value={editRallyId ?? ""}
+                        onChange={(e) =>
+                          setEditRallyId(e.target.value === "" ? null : e.target.value)
+                        }
+                        className="border-input w-full rounded border px-1 text-xs"
+                      >
+                        <option value="">No rally</option>
+                        {rallies.map((r: VideoRallyDTO, i: number) => (
+                          <option key={r.id} value={r.id}>
+                            Rally #{i + 1}
+                            {r.endTimeSeconds == null ? " (open)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {editRallyId && (
+                        <label className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={editEndsRally}
+                            onChange={(e) => setEditEndsRally(e.target.checked)}
+                          />
+                          Ends rally
+                        </label>
+                      )}
                       <textarea
                         value={editNote}
                         onChange={(e) => setEditNote(e.target.value)}
@@ -654,6 +827,18 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
                         <p className="font-mono text-xs text-muted-foreground">{formatClock(ev.timestampSeconds)}</p>
                         <p className="font-medium">
                           {ev.shotType} · {sideLabel(ev.side)} · {ev.outcome}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          {playerTag(ev.playerSlot, players) && (
+                            <span>{playerTag(ev.playerSlot, players)} · </span>
+                          )}
+                          {ev.rallyId != null && (
+                            <span>
+                              Rally #{rallyIndexById.get(ev.rallyId) ?? "?"}
+                              {ev.shotIndexInRally != null && ` · shot ${ev.shotIndexInRally}`}
+                              {ev.endsRally && " · ends"}
+                            </span>
+                          )}
                         </p>
                         {ev.note && <p className="text-muted-foreground text-xs">{ev.note}</p>}
                       </div>

@@ -13,6 +13,7 @@ import {
   ORG_ROLES,
   PLANS,
   PROCESSING_STATUSES,
+  RALLY_END_REASONS,
   RALLY_RESULTS,
   SHOT_EVENT_SOURCES,
   SHOT_OUTCOMES,
@@ -22,6 +23,7 @@ import {
   SUGGESTED_SHOT_STATUSES,
   TEAM_POSITIONS,
   TEAMS,
+  VIDEO_PLAYER_SLOTS,
   VIDEO_PRIVACY,
 } from "@pickleball/shared/constants";
 
@@ -33,6 +35,8 @@ export const matchTypeEnum = pgEnum("match_type", MATCH_TYPES);
 export const teamEnum = pgEnum("team", TEAMS);
 export const teamPositionEnum = pgEnum("team_position", TEAM_POSITIONS);
 export const rallyResultEnum = pgEnum("rally_result", RALLY_RESULTS);
+export const videoPlayerSlotEnum = pgEnum("video_player_slot", VIDEO_PLAYER_SLOTS);
+export const rallyEndReasonEnum = pgEnum("rally_end_reason", RALLY_END_REASONS);
 export const shotTypeEnum = pgEnum("shot_type", SHOT_TYPES);
 export const shotSideEnum = pgEnum("shot_side", SHOT_SIDES);
 export const shotOutcomeEnum = pgEnum("shot_outcome", SHOT_OUTCOMES);

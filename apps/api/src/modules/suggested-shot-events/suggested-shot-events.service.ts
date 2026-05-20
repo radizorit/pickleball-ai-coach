@@ -237,7 +237,7 @@ export class SuggestedShotEventsService {
 
   /**
    * Re-downloads the stored upload and re-runs heuristic_v2 suggestions (synchronous MVP).
-   * Pending `heuristic_v1` rows are replaced; accepted/rejected history is preserved.
+   * Pending heuristic rows (`heuristic_v1` / `heuristic_v2`) are replaced; accepted/rejected history is preserved.
    */
   async regenerateForVideo(
     auth: AuthContext,

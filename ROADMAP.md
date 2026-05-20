@@ -73,6 +73,7 @@ Tasks:
 - Add shot event editing
 - Add shot event deletion
 - Add timeline markers
+- **Done (MVP):** video-scoped player labels (`player_1` / `player_2`), manual rallies, shot `playerSlot` / `endsRally`, rally consistency panel
 
 ## Phase 5: Stats Engine
 
@@ -85,8 +86,8 @@ Tasks:
 - Calculate return error rate
 - Calculate forehand/backhand error rate
 - Calculate third-shot drop success rate
-- Calculate rally length
-- Calculate winners/errors
+- Calculate rally length — **partial:** `GET /v1/videos/:id/rally-consistency` + review UI from closed rallies
+- Calculate winners/errors — **partial:** per-player rally win/error counts in consistency stats
 - Build stats dashboard
 
 ## Phase 6: Feedback Reports

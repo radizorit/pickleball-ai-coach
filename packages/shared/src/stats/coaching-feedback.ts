@@ -1,9 +1,12 @@
 import type { ShotOutcome } from "../constants/index.js";
-import type { ShotEventDTO } from "../types/index.js";
+import type { RallyConsistencyStatsDTO, ShotEventDTO } from "../types/index.js";
 import { computeVideoShotStats } from "./video-shot-stats.js";
 
 /** Minimum tagged shots before we show full coaching conclusions. */
 export const COACHING_MIN_TAGS_FOR_FULL_FEEDBACK = 10;
+
+/** Minimum closed rallies before rally consistency is woven into copy. */
+export const COACHING_MIN_CLOSED_RALLIES = 3;
 
 const MISTAKE_OUTCOMES = ["out", "net", "forced_error", "unforced_error"] as const satisfies readonly ShotOutcome[];
 
@@ -66,7 +69,10 @@ function ratio(num: number, den: number): number {
  * Deterministic, rule-based coaching copy from manual tags + {@link computeVideoShotStats}.
  * No network, no AI — same inputs always yield the same report.
  */
-export function computeCoachingFeedback(events: readonly ShotEventDTO[]): CoachingFeedbackReport {
+export function computeCoachingFeedback(
+  events: readonly ShotEventDTO[],
+  options?: { rallyStats?: RallyConsistencyStatsDTO },
+): CoachingFeedbackReport {
   const tagCount = events.length;
   const lowSample = tagCount < COACHING_MIN_TAGS_FOR_FULL_FEEDBACK;
   const stats = computeVideoShotStats(events);
@@ -155,11 +161,18 @@ export function computeCoachingFeedback(events: readonly ShotEventDTO[]): Coachi
       "Patterns are still emerging — continue tagging positive outcomes (in / winner) on your best swings.";
   }
 
+  const rallyStats = options?.rallyStats;
+  const closedRallies = rallyStats?.closedRallyCount ?? 0;
+  const rallyLine =
+    closedRallies >= COACHING_MIN_CLOSED_RALLIES && rallyStats?.averageRallyLength != null
+      ? ` Closed rallies average ${rallyStats.averageRallyLength.toFixed(1)} shots (longest ${rallyStats.longestRallyLength ?? "—"}).`
+      : "";
+
   let overallSummary: string;
   if (lowSample) {
-    overallSummary = `You have ${tagCount} manual tag${tagCount === 1 ? "" : "s"}. Add at least ${COACHING_MIN_TAGS_FOR_FULL_FEEDBACK} for stronger, rule-based feedback. Below is a light preview from what you logged so far.`;
+    overallSummary = `You have ${tagCount} manual tag${tagCount === 1 ? "" : "s"}. Add at least ${COACHING_MIN_TAGS_FOR_FULL_FEEDBACK} for stronger, rule-based feedback. Below is a light preview from what you logged so far.${rallyLine}`;
   } else {
-    overallSummary = `From ${total} tags: ${winners} winner${winners === 1 ? "" : "s"}, ${mistakeTotal} mistake-class outcome${mistakeTotal === 1 ? "" : "s"}, ${unforced} unforced error${unforced === 1 ? "" : "s"}. This report uses simple thresholds — not opponent or rally context.`;
+    overallSummary = `From ${total} tags: ${winners} winner${winners === 1 ? "" : "s"}, ${mistakeTotal} mistake-class outcome${mistakeTotal === 1 ? "" : "s"}, ${unforced} unforced error${unforced === 1 ? "" : "s"}. This report uses simple thresholds — not opponent modeling.${rallyLine}`;
   }
 
   let suggestedNextFocus: string;

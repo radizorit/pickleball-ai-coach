@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ShotEventDTO } from "@pickleball/shared";
+import type { RallyConsistencyStatsDTO, ShotEventDTO } from "@pickleball/shared";
 import {
   COACHING_MIN_TAGS_FOR_FULL_FEEDBACK,
   computeCoachingFeedback,
@@ -12,11 +12,16 @@ import {
 export function VideoCoachingFeedbackPanel({
   events,
   isLoading,
+  rallyStats,
 }: {
   events: ShotEventDTO[] | undefined;
   isLoading: boolean;
+  rallyStats?: RallyConsistencyStatsDTO;
 }) {
-  const report = useMemo(() => computeCoachingFeedback(events ?? []), [events]);
+  const report = useMemo(
+    () => computeCoachingFeedback(events ?? [], { rallyStats }),
+    [events, rallyStats],
+  );
 
   if (isLoading) {
     return (

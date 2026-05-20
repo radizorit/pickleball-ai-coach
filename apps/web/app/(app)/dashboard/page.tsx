@@ -4,6 +4,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardMeCard } from "@/components/dashboard-me-card";
+import { DevApiTokenCard } from "@/components/dev-api-token-card";
 
 export default async function DashboardPage() {
   const user = await currentUser();
@@ -24,6 +25,8 @@ export default async function DashboardPage() {
       </div>
 
       <DashboardMeCard />
+
+      <DevApiTokenCard />
 
       <Card>
         <CardHeader>

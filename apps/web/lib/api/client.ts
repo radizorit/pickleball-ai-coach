@@ -7,12 +7,15 @@
 import type {
   ApiError,
   HealthResponse,
+  RallyConsistencyStatsDTO,
   ShotEventDTO,
   SuggestedShotEventDTO,
   SuggestedShotRegenerateSummaryDTO,
   SuggestedShotStatsDTO,
   UserDTO,
   VideoDTO,
+  VideoPlayerDTO,
+  VideoRallyDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
   VideoTrainingExportDTO,
@@ -20,11 +23,14 @@ import type {
 import type {
   ConvertSuggestedShotBatchBody,
   ConvertSuggestedShotBody,
+  CreateRallyBody,
   CreateShotEventBody,
   CreateVideoBody,
   PresignVideoUploadBody,
+  UpdateRallyBody,
   UpdateShotEventBody,
   UpdateSuggestedShotBody,
+  UpsertVideoPlayersBody,
 } from "@pickleball/shared/zod";
 
 export type GetTokenFn = () => Promise<string | null>;
@@ -122,6 +128,33 @@ export function createApiClient(options: ApiClientOptions = {}) {
       request<VideoPresignedReadDTO>(
         `/v1/videos/${encodeURIComponent(id)}/read-url?asset=${encodeURIComponent(asset)}`,
       ),
+    videosPlayersList: (videoId: string) =>
+      request<VideoPlayerDTO[]>(`/v1/videos/${encodeURIComponent(videoId)}/players`),
+    videosPlayersUpsert: (videoId: string, body: UpsertVideoPlayersBody) =>
+      request<VideoPlayerDTO[]>(`/v1/videos/${encodeURIComponent(videoId)}/players`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    videosRalliesList: (videoId: string) =>
+      request<VideoRallyDTO[]>(`/v1/videos/${encodeURIComponent(videoId)}/rallies`),
+    videosRalliesCreate: (videoId: string, body: CreateRallyBody) =>
+      request<VideoRallyDTO>(`/v1/videos/${encodeURIComponent(videoId)}/rallies`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    videosRallyConsistency: (videoId: string) =>
+      request<RallyConsistencyStatsDTO>(
+        `/v1/videos/${encodeURIComponent(videoId)}/rally-consistency`,
+      ),
+    ralliesUpdate: (rallyId: string, body: UpdateRallyBody) =>
+      request<VideoRallyDTO>(`/v1/rallies/${encodeURIComponent(rallyId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    ralliesDelete: (rallyId: string) =>
+      request<{ ok: true }>(`/v1/rallies/${encodeURIComponent(rallyId)}`, {
+        method: "DELETE",
+      }),
     videosShotEventsList: (videoId: string) =>
       request<ShotEventDTO[]>(`/v1/videos/${encodeURIComponent(videoId)}/shot-events`),
     videosShotEventsCreate: (videoId: string, body: CreateShotEventBody) =>

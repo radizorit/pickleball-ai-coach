@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiTags } from "@nestjs/swagger";
 import type { ShotEventDTO } from "@pickleball/shared";
-import { SHOT_OUTCOMES, SHOT_SIDES, SHOT_TYPES } from "@pickleball/shared/constants";
+import { SHOT_OUTCOMES, SHOT_SIDES, SHOT_TYPES, VIDEO_PLAYER_SLOTS } from "@pickleball/shared/constants";
 import { zUpdateShotEventBody } from "@pickleball/shared/zod";
 
 import { AuthGuard } from "../../auth/auth.guard.js";
@@ -40,6 +40,8 @@ export class ShotEventsController {
         outcome: { type: "string", enum: [...SHOT_OUTCOMES] },
         note: { type: "string", nullable: true },
         rallyId: { type: "string", format: "uuid", nullable: true },
+        playerSlot: { type: "string", enum: [...VIDEO_PLAYER_SLOTS], nullable: true },
+        endsRally: { type: "boolean" },
       },
     },
   })

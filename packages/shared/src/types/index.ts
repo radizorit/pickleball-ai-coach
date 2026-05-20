@@ -2,6 +2,7 @@ import type {
   MatchType,
   Plan,
   ProcessingStatus,
+  RallyEndReason,
   RallyResult,
   ShotEventSource,
   ShotOutcome,
@@ -11,6 +12,7 @@ import type {
   SuggestedShotStatus,
   Team,
   TeamPosition,
+  VideoPlayerSlot,
   VideoPrivacy,
 } from "../constants/index.js";
 
@@ -111,6 +113,7 @@ export interface MatchParticipantDTO {
   isSelf: boolean;
 }
 
+/** Future match-centric rally (ms, teams). Not used by video-scoped MVP API. */
 export interface RallyDTO {
   id: string;
   matchId: string;
@@ -124,6 +127,27 @@ export interface RallyDTO {
   result: RallyResult | null;
 }
 
+/** Lightweight player label for a video (`GET/PUT /v1/videos/:id/players`). */
+export interface VideoPlayerDTO {
+  videoId: string;
+  slot: VideoPlayerSlot;
+  displayName: string | null;
+}
+
+/** Manual rally segment on a video (seconds, aligned with shot timestamps). */
+export interface VideoRallyDTO {
+  id: string;
+  videoId: string;
+  startTimeSeconds: number;
+  endTimeSeconds: number | null;
+  winningPlayerSlot: VideoPlayerSlot | null;
+  endReason: RallyEndReason | null;
+  /** Shots tagged in this rally (API-computed). */
+  shotCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /**
  * Manual (or future AI) shot tag on a video. Timestamps are in seconds to align
  * with HTMLMediaElement.currentTime and worker-derived `durationSeconds`.
@@ -132,6 +156,10 @@ export interface ShotEventDTO {
   id: string;
   videoId: string;
   rallyId: string | null;
+  playerSlot: VideoPlayerSlot | null;
+  /** 1-based index within the rally; null when not assigned to a rally. */
+  shotIndexInRally: number | null;
+  endsRally: boolean;
   timestampSeconds: number;
   shotType: ShotType;
   side: ShotSide;
@@ -143,6 +171,20 @@ export interface ShotEventDTO {
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** `GET /v1/videos/:id/rally-consistency` — derived from rallies + shot tags. */
+export interface RallyConsistencyStatsDTO {
+  closedRallyCount: number;
+  openRallyCount: number;
+  averageRallyLength: number | null;
+  longestRallyLength: number | null;
+  /** Per closed rally with `endReason === error`: shot count in that rally. */
+  shotsBeforeError: number[];
+  /** Per closed rally with `endReason === winner`: shot count in that rally. */
+  shotsBeforeWinner: number[];
+  playerWinnerCounts: Record<VideoPlayerSlot, number>;
+  playerErrorCounts: Record<VideoPlayerSlot, number>;
 }
 
 /** Response from `POST /v1/videos/:id/suggested-shot-events/regenerate`. */

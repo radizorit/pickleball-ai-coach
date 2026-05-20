@@ -11,6 +11,12 @@ export function runCapture(cmd: string, args: string[]): Promise<string> {
       out += String(d);
     });
     child.on("error", reject);
-    child.on("close", () => resolve(out));
+    child.on("close", (code) => {
+      if (code !== 0 && code !== null) {
+        reject(new Error(`ffmpeg exited with code ${code}: ${out.slice(-4000)}`));
+        return;
+      }
+      resolve(out);
+    });
   });
 }
