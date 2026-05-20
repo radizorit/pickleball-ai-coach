@@ -1,5 +1,15 @@
-import type { ShotEventDTO, SuggestedShotEventDTO } from "@pickleball/shared";
-import type { ConvertSuggestedShotBody } from "@pickleball/shared/zod";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import type {
+  ShotEventDTO,
+  SuggestedShotEventDTO,
+  SuggestedShotRegenerateSummaryDTO,
+  SuggestedShotStatsDTO,
+} from "@pickleball/shared";
+import type { ConvertSuggestedShotBody, ConvertSuggestedShotBatchBody } from "@pickleball/shared/zod";
+import { runSuggestionPipeline } from "@pickleball/suggestions";
 import { and, asc, eq, getDb, isNull, sql } from "@pickleball/db";
 import { shotEvents, suggestedShotEvents, videos } from "@pickleball/db/schema";
 import type { SuggestedShotEventRow } from "@pickleball/db/schema";
@@ -10,10 +20,14 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 
 import type { AuthContext } from "../../auth/auth.types.js";
+import { loadEnv } from "../../env.js";
+import { createS3ClientFromApiEnv, downloadObjectToFile, isS3Configured } from "../../storage/s3-client.js";
 import { UsersService } from "../users/users.service.js";
+import { shotEventToDto } from "../shot-events/shot-event-mapper.js";
 
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -27,6 +41,10 @@ function suggestedToDto(row: SuggestedShotEventRow): SuggestedShotEventDTO {
     confidence: row.confidence,
     source: row.source,
     status: row.status,
+    reason: row.reason ?? null,
+    audioPeak: row.audioPeak ?? null,
+    motionScore: row.motionScore ?? null,
+    debugMetadata: row.debugMetadata ?? null,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
   };
@@ -79,6 +97,144 @@ export class SuggestedShotEventsService {
       .orderBy(asc(suggestedShotEvents.timestampSeconds), asc(suggestedShotEvents.createdAt));
 
     return rows.map(suggestedToDto);
+  }
+
+  async statsForVideo(auth: AuthContext, videoId: string): Promise<SuggestedShotStatsDTO> {
+    await this.assertVideoOwned(auth, videoId);
+    const db = getDb();
+    const rows = await db
+      .select({
+        status: suggestedShotEvents.status,
+        confidence: suggestedShotEvents.confidence,
+      })
+      .from(suggestedShotEvents)
+      .where(eq(suggestedShotEvents.videoId, videoId));
+
+    const suggested = rows.filter((r) => r.status === "suggested");
+    const accepted = rows.filter((r) => r.status === "accepted");
+    const rejected = rows.filter((r) => r.status === "rejected");
+
+    const avg = (list: typeof rows) =>
+      list.length > 0
+        ? Math.round((list.reduce((s, r) => s + r.confidence, 0) / list.length) * 1000) / 1000
+        : null;
+
+    return {
+      suggested: suggested.length,
+      accepted: accepted.length,
+      rejected: rejected.length,
+      avgConfidenceSuggested: avg(suggested),
+      avgConfidenceAccepted: avg(accepted),
+    };
+  }
+
+  async convertBatch(
+    auth: AuthContext,
+    videoId: string,
+    body: ConvertSuggestedShotBatchBody,
+  ): Promise<{ converted: ShotEventDTO[]; skipped: number }> {
+    await this.assertVideoOwned(auth, videoId);
+    const db = getDb();
+    const pending = await db
+      .select()
+      .from(suggestedShotEvents)
+      .where(
+        and(
+          eq(suggestedShotEvents.videoId, videoId),
+          eq(suggestedShotEvents.status, "suggested"),
+        ),
+      )
+      .orderBy(asc(suggestedShotEvents.timestampSeconds));
+
+    const eligible = pending.filter((p) => p.confidence >= body.minConfidence);
+    const skipped = pending.length - eligible.length;
+    const converted: ShotEventDTO[] = [];
+
+    for (const sug of eligible) {
+      const result = await this.convertSuggestion(auth, videoId, sug.id, {});
+      converted.push(result.shot);
+    }
+
+    return { converted, skipped };
+  }
+
+  /**
+   * Re-downloads the stored upload and re-runs heuristic_v2 suggestions (synchronous MVP).
+   * Pending `heuristic_v1` rows are replaced; accepted/rejected history is preserved.
+   */
+  async regenerateForVideo(
+    auth: AuthContext,
+    videoId: string,
+  ): Promise<SuggestedShotRegenerateSummaryDTO> {
+    await this.assertVideoOwned(auth, videoId);
+    const env = loadEnv();
+    if (!isS3Configured(env)) {
+      throw new ServiceUnavailableException(
+        "Object storage is not configured (required to download the video for regeneration).",
+      );
+    }
+
+    const db = getDb();
+    const [video] = await db
+      .select({
+        id: videos.id,
+        youtubeUrl: videos.youtubeUrl,
+        processingStatus: videos.processingStatus,
+        storageBucket: videos.storageBucket,
+        storageObjectKey: videos.storageObjectKey,
+        durationSeconds: videos.durationSeconds,
+      })
+      .from(videos)
+      .where(and(eq(videos.id, videoId), isNull(videos.deletedAt)))
+      .limit(1);
+
+    if (!video) {
+      throw new NotFoundException("Video not found");
+    }
+    if (video.youtubeUrl) {
+      throw new BadRequestException("Suggestions are not available for YouTube-only videos");
+    }
+    if (video.processingStatus !== "ready") {
+      throw new BadRequestException("Video must be ready before regenerating suggestions");
+    }
+    if (!video.storageBucket || !video.storageObjectKey) {
+      throw new BadRequestException("Video is missing storage object metadata");
+    }
+
+    const ext = path.extname(video.storageObjectKey);
+    const suffix = ext && ext.length <= 8 ? ext : ".bin";
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "pb-api-suggestions-"));
+    const inputPath = path.join(tmpRoot, `source${suffix}`);
+
+    try {
+      const s3 = createS3ClientFromApiEnv(env);
+      await downloadObjectToFile({
+        client: s3,
+        bucket: video.storageBucket,
+        key: video.storageObjectKey,
+        destPath: inputPath,
+      });
+
+      const pipelineResult = await runSuggestionPipeline({
+        db,
+        env: { FFMPEG_BIN: env.FFMPEG_BIN },
+        videoId,
+        inputPath,
+        durationSeconds: video.durationSeconds,
+      });
+
+      const counts = await this.statsForVideo(auth, videoId);
+
+      return {
+        generatedCount: pipelineResult.inserted,
+        averageConfidence: pipelineResult.stats.avgConfidence,
+        pendingCount: counts.suggested,
+        acceptedCount: counts.accepted,
+        rejectedCount: counts.rejected,
+      };
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true });
+    }
   }
 
   async rejectSuggestion(auth: AuthContext, suggestionId: string): Promise<SuggestedShotEventDTO> {
@@ -166,6 +322,7 @@ export class SuggestedShotEventsService {
           outcome,
           note,
           source: "manual",
+          suggestedShotEventId: suggestionId,
           createdByUserId: userId,
         })
         .returning();
@@ -184,22 +341,7 @@ export class SuggestedShotEventsService {
         throw new ConflictException("Suggestion was updated by another request");
       }
 
-      const shot: ShotEventDTO = {
-        id: shotRow.id,
-        videoId: shotRow.videoId,
-        rallyId: shotRow.rallyId ?? null,
-        timestampSeconds: shotRow.timestampSeconds,
-        shotType: shotRow.shotType,
-        side: shotRow.side,
-        outcome: shotRow.outcome,
-        note: shotRow.note ?? null,
-        source: shotRow.source,
-        createdByUserId: shotRow.createdByUserId,
-        createdAt: toIso(shotRow.createdAt),
-        updatedAt: toIso(shotRow.updatedAt),
-      };
-
-      return { shot, suggestion: suggestedToDto(sugUpdated) };
+      return { shot: shotEventToDto(shotRow), suggestion: suggestedToDto(sugUpdated) };
     });
   }
 }

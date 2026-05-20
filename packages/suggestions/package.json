@@ -1,0 +1,32 @@
+{
+  "name": "@pickleball/suggestions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Heuristic shot-moment suggestion pipeline (ffmpeg signals + fuse)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@pickleball/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@pickleball/config": "workspace:*",
+    "@types/node": "^20.14.10",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2"
+  }
+}

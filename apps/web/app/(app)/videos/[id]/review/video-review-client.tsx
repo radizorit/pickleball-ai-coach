@@ -8,6 +8,7 @@ import { ApiClientError } from "@/lib/api/client";
 import { useAuthedApiClient } from "@/lib/api/use-authed-api-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SuggestedShotsPanel } from "@/components/suggested-shots-panel";
 import { VideoCoachingFeedbackPanel } from "@/components/video-coaching-feedback-panel";
 import { VideoShotStatsPanel } from "@/components/video-shot-stats-panel";
 import type { ShotEventDTO, SuggestedShotEventDTO, VideoDTO } from "@pickleball/shared";
@@ -66,9 +67,9 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     enabled: videoQ.isSuccess,
   });
 
-  const suggestionsQ = useQuery({
-    queryKey: ["videos", videoId, "suggested-shot-events"],
-    queryFn: () => client.videosSuggestedShotEventsList(videoId),
+  const allSuggestionsQ = useQuery({
+    queryKey: ["videos", videoId, "suggested-shot-events", "all"],
+    queryFn: () => client.videosSuggestedShotEventsList(videoId, "all"),
     enabled: videoQ.isSuccess && !isYoutube,
   });
 
@@ -89,14 +90,17 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const [editTs, setEditTs] = useState(0);
 
   const durationSeconds = v?.durationSeconds ?? null;
-  const pendingSuggestions = suggestionsQ.data ?? [];
   const timelineMax = useMemo(() => {
     const events = eventsQ.data ?? [];
+    const allSuggestions = allSuggestionsQ.data ?? [];
     const maxEv = events.reduce((m, e) => Math.max(m, e.timestampSeconds), 0);
-    const maxSug = pendingSuggestions.reduce((m, s) => Math.max(m, s.timestampSeconds), 0);
+    const maxSug = allSuggestions.reduce((m, s) => Math.max(m, s.timestampSeconds), 0);
     const base = durationSeconds && durationSeconds > 0 ? durationSeconds : Math.max(maxEv, maxSug);
     return Math.max(base || 1, 1);
-  }, [durationSeconds, eventsQ.data, pendingSuggestions]);
+  }, [durationSeconds, eventsQ.data, allSuggestionsQ.data]);
+  const allSuggestions = allSuggestionsQ.data ?? [];
+
+  const [focusedSuggestion, setFocusedSuggestion] = useState<SuggestedShotEventDTO | null>(null);
 
   const createMut = useMutation({
     mutationFn: (body: CreateShotEventBody) => client.videosShotEventsCreate(videoId, body),
@@ -117,23 +121,6 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const deleteMut = useMutation({
     mutationFn: (id: string) => client.shotEventsDelete(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["videos", videoId, "shot-events"] });
-    },
-  });
-
-  const rejectSugMut = useMutation({
-    mutationFn: (suggestionId: string) =>
-      client.suggestedShotEventsReject(suggestionId, { status: "rejected" }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["videos", videoId, "suggested-shot-events"] });
-    },
-  });
-
-  const convertSugMut = useMutation({
-    mutationFn: (suggestionId: string) =>
-      client.videosSuggestedShotEventConvert(videoId, suggestionId, {}),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["videos", videoId, "suggested-shot-events"] });
       void qc.invalidateQueries({ queryKey: ["videos", videoId, "shot-events"] });
     },
   });
@@ -173,6 +160,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
         return;
       }
       if (editingId) return;
+      if (focusedSuggestion) return;
 
       if (e.code === "Space" && videoRef.current && !isYoutube) {
         e.preventDefault();
@@ -221,7 +209,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editingId, isYoutube, quickCreate]);
+  }, [editingId, focusedSuggestion, isYoutube, quickCreate]);
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -284,12 +272,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   }
 
   const events = eventsQ.data ?? [];
-  const busy =
-    createMut.isPending ||
-    updateMut.isPending ||
-    deleteMut.isPending ||
-    rejectSugMut.isPending ||
-    convertSugMut.isPending;
+  const busy = createMut.isPending || updateMut.isPending || deleteMut.isPending;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -376,16 +359,45 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
           <div className="bg-muted/40 rounded-lg border p-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Timeline</p>
             <div className="relative mt-2 h-3 w-full rounded-full bg-muted">
-              {pendingSuggestions.map((s) => (
-                <button
-                  key={`sug-${s.id}`}
-                  type="button"
-                  title={`Suggested ${formatClock(s.timestampSeconds)} · ${Math.round(s.confidence * 100)}%`}
-                  className="border-primary bg-background ring-background absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ring-2 hover:border-primary/80"
-                  style={{ left: `${Math.min(100, (s.timestampSeconds / timelineMax) * 100)}%` }}
-                  onClick={() => seekTo(s.timestampSeconds)}
-                />
-              ))}
+              {allSuggestions.map((s) => {
+                const pct = Math.min(100, (s.timestampSeconds / timelineMax) * 100);
+                const title = `${s.status} ${formatClock(s.timestampSeconds)} · ${Math.round(s.confidence * 100)}%`;
+                if (s.status === "accepted") {
+                  return (
+                    <button
+                      key={`sug-${s.id}`}
+                      type="button"
+                      title={title}
+                      className="bg-emerald-500 ring-background absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2"
+                      style={{ left: `${pct}%` }}
+                      onClick={() => seekTo(s.timestampSeconds)}
+                    />
+                  );
+                }
+                if (s.status === "rejected") {
+                  return (
+                    <button
+                      key={`sug-${s.id}`}
+                      type="button"
+                      title={title}
+                      className="bg-muted-foreground/40 ring-background absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1"
+                      style={{ left: `${pct}%` }}
+                      onClick={() => seekTo(s.timestampSeconds)}
+                    />
+                  );
+                }
+                const isFocused = focusedSuggestion?.id === s.id;
+                return (
+                  <button
+                    key={`sug-${s.id}`}
+                    type="button"
+                    title={title}
+                    className={`border-primary bg-background ring-background absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ring-2 hover:border-primary/80 ${isFocused ? "ring-primary ring-4" : ""}`}
+                    style={{ left: `${pct}%` }}
+                    onClick={() => seekTo(s.timestampSeconds)}
+                  />
+                );
+              })}
               {events.map((ev) => (
                 <button
                   key={ev.id}
@@ -481,96 +493,23 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
               <Button type="button" className="w-full" disabled={busy} onClick={addShot}>
                 Add shot at active clock
               </Button>
-              {(createMut.error || updateMut.error || deleteMut.error || rejectSugMut.error || convertSugMut.error) && (
+              {(createMut.error || updateMut.error || deleteMut.error) && (
                 <p className="text-destructive text-xs">
                   {(createMut.error as Error)?.message ??
                     (updateMut.error as Error)?.message ??
-                    (deleteMut.error as Error)?.message ??
-                    (rejectSugMut.error as Error)?.message ??
-                    (convertSugMut.error as Error)?.message}
+                    (deleteMut.error as Error)?.message}
                 </p>
               )}
             </CardContent>
           </Card>
 
           {!isYoutube && (
-            <Card className="border-dashed">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Suggested moments ({pendingSuggestions.length})</CardTitle>
-                <CardDescription>
-                  Auto-detected scene changes (heuristic). Not available for YouTube-only rows.
-                  {v.processingStatus !== "ready" && v.processingStatus !== "failed" && (
-                    <span className="mt-1 block text-amber-600 dark:text-amber-500">
-                      More suggestions may appear after processing finishes.
-                    </span>
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="max-h-[min(40vh,360px)] space-y-2 overflow-y-auto text-sm">
-                {suggestionsQ.isLoading && <p className="text-muted-foreground">Loading…</p>}
-                {suggestionsQ.isError && (
-                  <p className="text-destructive text-xs">
-                    {suggestionsQ.error instanceof ApiClientError
-                      ? suggestionsQ.error.message
-                      : "Could not load suggestions"}
-                  </p>
-                )}
-                {!suggestionsQ.isLoading && pendingSuggestions.length === 0 && (
-                  <p className="text-muted-foreground">
-                    No pending suggestions. Uploads get candidates from the worker after ffprobe.
-                  </p>
-                )}
-                {pendingSuggestions.map((s: SuggestedShotEventDTO) => (
-                  <div
-                    key={s.id}
-                    className="hover:bg-muted/50 rounded-md border border-dashed p-2 transition-colors"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => seekTo(s.timestampSeconds)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        seekTo(s.timestampSeconds);
-                      }
-                    }}
-                  >
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="font-mono text-xs text-muted-foreground">{formatClock(s.timestampSeconds)}</p>
-                        <p className="text-muted-foreground text-xs">
-                          Confidence ~{Math.round(s.confidence * 100)}% · {s.source}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          type="button"
-                          disabled={busy}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            rejectSugMut.mutate(s.id);
-                          }}
-                        >
-                          Reject
-                        </Button>
-                        <Button
-                          size="sm"
-                          type="button"
-                          disabled={busy}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            convertSugMut.mutate(s.id);
-                          }}
-                        >
-                          Convert to shot
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            <SuggestedShotsPanel
+              videoId={videoId}
+              processingStatus={v.processingStatus}
+              seekTo={seekTo}
+              onFocusChange={setFocusedSuggestion}
+            />
           )}
 
           <Card>

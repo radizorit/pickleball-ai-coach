@@ -9,12 +9,15 @@ import type {
   HealthResponse,
   ShotEventDTO,
   SuggestedShotEventDTO,
+  SuggestedShotRegenerateSummaryDTO,
+  SuggestedShotStatsDTO,
   UserDTO,
   VideoDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
 } from "@pickleball/shared";
 import type {
+  ConvertSuggestedShotBatchBody,
   ConvertSuggestedShotBody,
   CreateShotEventBody,
   CreateVideoBody,
@@ -135,6 +138,20 @@ export function createApiClient(options: ApiClientOptions = {}) {
         `/v1/videos/${encodeURIComponent(videoId)}/suggested-shot-events${q}`,
       );
     },
+    videosSuggestedShotEventsStats: (videoId: string) =>
+      request<SuggestedShotStatsDTO>(
+        `/v1/videos/${encodeURIComponent(videoId)}/suggested-shot-events/stats`,
+      ),
+    videosSuggestedShotEventsRegenerate: (videoId: string) =>
+      request<SuggestedShotRegenerateSummaryDTO>(
+        `/v1/videos/${encodeURIComponent(videoId)}/suggested-shot-events/regenerate`,
+        { method: "POST" },
+      ),
+    videosSuggestedShotEventsConvertBatch: (videoId: string, body: ConvertSuggestedShotBatchBody) =>
+      request<{ converted: ShotEventDTO[]; skipped: number }>(
+        `/v1/videos/${encodeURIComponent(videoId)}/suggested-shot-events/convert-batch`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
     videosSuggestedShotEventConvert: (
       videoId: string,
       suggestionId: string,

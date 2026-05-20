@@ -138,9 +138,35 @@ export interface ShotEventDTO {
   outcome: ShotOutcome;
   note: string | null;
   source: ShotEventSource;
+  /** Populated when the tag was created from a suggestion (training audit). */
+  suggestedShotEventId: string | null;
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Response from `POST /v1/videos/:id/suggested-shot-events/regenerate`. */
+export interface SuggestedShotRegenerateSummaryDTO {
+  generatedCount: number;
+  averageConfidence: number;
+  pendingCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+}
+
+/** Debug payload from worker heuristics (also persisted in DB `debug_metadata`). */
+export interface SuggestedShotDebugMetadata {
+  generatedAt: string;
+  pipelineVersion?: string;
+  sceneScore?: number;
+  audioPeak?: number;
+  motionScore?: number;
+  signalWeights?: { scene: number; audio: number; motion: number };
+  rawCandidateCount?: number;
+  mergedClusterCount?: number;
+  suppressedBelowThreshold?: number;
+  suppressedSpacing?: number;
+  suppressedMaxCount?: number;
 }
 
 /** Heuristic (or future ML) shot moment candidate — not a confirmed tag until converted. */
@@ -151,8 +177,21 @@ export interface SuggestedShotEventDTO {
   confidence: number;
   source: SuggestedShotSource;
   status: SuggestedShotStatus;
+  reason: string | null;
+  audioPeak: number | null;
+  motionScore: number | null;
+  debugMetadata: SuggestedShotDebugMetadata | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Compare suggestion funnel for a video (debug / tuning). */
+export interface SuggestedShotStatsDTO {
+  suggested: number;
+  accepted: number;
+  rejected: number;
+  avgConfidenceSuggested: number | null;
+  avgConfidenceAccepted: number | null;
 }
 
 /**

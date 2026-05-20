@@ -2,7 +2,6 @@ import type { ShotEventDTO } from "@pickleball/shared";
 import type { CreateShotEventBody, UpdateShotEventBody } from "@pickleball/shared/zod";
 import { and, asc, eq, getDb, isNull, sql } from "@pickleball/db";
 import { shotEvents, videos } from "@pickleball/db/schema";
-import type { ShotEventRow } from "@pickleball/db/schema";
 import {
   BadRequestException,
   ForbiddenException,
@@ -13,27 +12,7 @@ import {
 
 import type { AuthContext } from "../../auth/auth.types.js";
 import { UsersService } from "../users/users.service.js";
-
-function toIso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-}
-
-function toDto(row: ShotEventRow): ShotEventDTO {
-  return {
-    id: row.id,
-    videoId: row.videoId,
-    rallyId: row.rallyId ?? null,
-    timestampSeconds: row.timestampSeconds,
-    shotType: row.shotType,
-    side: row.side,
-    outcome: row.outcome,
-    note: row.note ?? null,
-    source: row.source,
-    createdByUserId: row.createdByUserId,
-    createdAt: toIso(row.createdAt),
-    updatedAt: toIso(row.updatedAt),
-  };
-}
+import { shotEventToDto } from "./shot-event-mapper.js";
 
 @Injectable()
 export class ShotEventsService {
@@ -60,7 +39,7 @@ export class ShotEventsService {
       .from(shotEvents)
       .where(eq(shotEvents.videoId, videoId))
       .orderBy(asc(shotEvents.timestampSeconds), asc(shotEvents.createdAt));
-    return rows.map(toDto);
+    return rows.map(shotEventToDto);
   }
 
   async createForVideo(
@@ -88,7 +67,7 @@ export class ShotEventsService {
     if (!row) {
       throw new BadRequestException("Could not create shot event");
     }
-    return toDto(row);
+    return shotEventToDto(row);
   }
 
   async updateEvent(
@@ -135,7 +114,7 @@ export class ShotEventsService {
     if (!updated) {
       throw new NotFoundException("Shot event not found");
     }
-    return toDto(updated);
+    return shotEventToDto(updated);
   }
 
   async deleteEvent(auth: AuthContext, eventId: string): Promise<void> {

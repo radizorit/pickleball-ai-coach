@@ -69,16 +69,13 @@ export async function processVideoJob(params: {
     const meta = await ffprobeVideoMeta(env, inputPath);
 
     try {
-      const n = await runHeuristicSuggestedShots({
+      await runHeuristicSuggestedShots({
         db: getDb(),
-        env,
+        env: { FFMPEG_BIN: env.FFMPEG_BIN },
         videoId: video.id,
         inputPath,
         durationSeconds: meta.durationSeconds,
       });
-      if (n > 0) {
-        console.info(`[worker] heuristic suggestions: ${n} candidates for video ${video.id}`);
-      }
     } catch (err) {
       console.error(`[worker] heuristic suggestions skipped for ${video.id}:`, err);
     }

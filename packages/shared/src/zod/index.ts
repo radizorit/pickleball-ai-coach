@@ -209,11 +209,43 @@ export const zShotEventDTO = z.object({
   outcome: zShotOutcome,
   note: z.string().nullable(),
   source: zShotEventSource,
+  suggestedShotEventId: zUuid.nullable(),
   createdByUserId: zUuid,
   createdAt: zIsoDateTime,
   updatedAt: zIsoDateTime,
 });
 export type ShotEventDTOValidated = z.infer<typeof zShotEventDTO>;
+
+export const zSuggestedShotRegenerateSummaryDTO = z.object({
+  generatedCount: z.number().int().nonnegative(),
+  averageConfidence: z.number().min(0).max(1),
+  pendingCount: z.number().int().nonnegative(),
+  acceptedCount: z.number().int().nonnegative(),
+  rejectedCount: z.number().int().nonnegative(),
+});
+export type SuggestedShotRegenerateSummaryDTOValidated = z.infer<
+  typeof zSuggestedShotRegenerateSummaryDTO
+>;
+
+export const zSuggestedShotDebugMetadata = z.object({
+  generatedAt: zIsoDateTime,
+  pipelineVersion: z.string().optional(),
+  sceneScore: z.number().optional(),
+  audioPeak: z.number().optional(),
+  motionScore: z.number().optional(),
+  signalWeights: z
+    .object({
+      scene: z.number(),
+      audio: z.number(),
+      motion: z.number(),
+    })
+    .optional(),
+  rawCandidateCount: z.number().int().nonnegative().optional(),
+  mergedClusterCount: z.number().int().nonnegative().optional(),
+  suppressedBelowThreshold: z.number().int().nonnegative().optional(),
+  suppressedSpacing: z.number().int().nonnegative().optional(),
+  suppressedMaxCount: z.number().int().nonnegative().optional(),
+});
 
 export const zSuggestedShotEventDTO = z.object({
   id: zUuid,
@@ -222,10 +254,28 @@ export const zSuggestedShotEventDTO = z.object({
   confidence: z.number().min(0).max(1),
   source: zSuggestedShotSource,
   status: zSuggestedShotStatus,
+  reason: z.string().nullable(),
+  audioPeak: z.number().nullable(),
+  motionScore: z.number().nullable(),
+  debugMetadata: zSuggestedShotDebugMetadata.nullable(),
   createdAt: zIsoDateTime,
   updatedAt: zIsoDateTime,
 });
 export type SuggestedShotEventDTOValidated = z.infer<typeof zSuggestedShotEventDTO>;
+
+export const zSuggestedShotStatsDTO = z.object({
+  suggested: z.number().int().nonnegative(),
+  accepted: z.number().int().nonnegative(),
+  rejected: z.number().int().nonnegative(),
+  avgConfidenceSuggested: z.number().min(0).max(1).nullable(),
+  avgConfidenceAccepted: z.number().min(0).max(1).nullable(),
+});
+export type SuggestedShotStatsDTOValidated = z.infer<typeof zSuggestedShotStatsDTO>;
+
+export const zConvertSuggestedShotBatchBody = z.object({
+  minConfidence: z.number().min(0).max(1),
+});
+export type ConvertSuggestedShotBatchBody = z.infer<typeof zConvertSuggestedShotBatchBody>;
 
 /** `PATCH /v1/suggested-shot-events/:id` — dismiss a pending suggestion. */
 export const zUpdateSuggestedShotBody = z.object({

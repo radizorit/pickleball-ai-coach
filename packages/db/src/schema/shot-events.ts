@@ -14,6 +14,7 @@ import {
   shotSideEnum,
   shotTypeEnum,
 } from "./enums.js";
+import { suggestedShotEvents } from "./suggested-shot-events.js";
 import { users } from "./users.js";
 import { videos } from "./videos.js";
 
@@ -36,6 +37,10 @@ export const shotEvents = pgTable(
     outcome: shotOutcomeEnum("shot_outcome").notNull(),
     note: text("note"),
     source: shotEventSourceEnum("source").notNull().default("manual"),
+    /** Set when this tag was created from a suggestion (audit / training labels). */
+    suggestedShotEventId: uuid("suggested_shot_event_id").references(() => suggestedShotEvents.id, {
+      onDelete: "set null",
+    }),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -52,6 +57,7 @@ export const shotEvents = pgTable(
       table.timestampSeconds,
     ),
     videoCreatedIdx: index("shot_events_video_created_idx").on(table.videoId, table.createdAt),
+    suggestedShotIdx: index("shot_events_suggested_shot_event_id_idx").on(table.suggestedShotEventId),
   }),
 );
 

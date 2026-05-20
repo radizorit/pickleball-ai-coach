@@ -119,8 +119,8 @@ pnpm db:seed
   (signed GET for S3-backed media),
   **`GET/POST /v1/videos/:id/shot-events`**, **`PATCH/DELETE /v1/shot-events/:eventId`**
   (manual tags; ownership via `videos.user_id`) — all require a Clerk JWT. DTOs live in `@pickleball/shared`.
-  **Suggested shots (upload path):** `GET /v1/videos/:id/suggested-shot-events` (optional `?status=`), **`PATCH /v1/suggested-shot-events/:id`** (`{ "status": "rejected" }` only),
-  **`POST /v1/videos/:videoId/suggested-shot-events/:id/convert`** (creates a manual `shot_events` row and marks the suggestion accepted).
+  **Suggested shots (upload path):** `GET /v1/videos/:id/suggested-shot-events` (optional `?status=`), **`GET …/stats`**, **`POST …/regenerate`** (re-run heuristics on stored upload), **`POST …/convert-batch`**, **`PATCH /v1/suggested-shot-events/:id`** (`{ "status": "rejected" }` only),
+  **`POST /v1/videos/:videoId/suggested-shot-events/:id/convert`** (creates a manual `shot_events` row linked via `suggested_shot_event_id` and marks the suggestion accepted).
 - **Upload flow:** `pending` → (presign) → `uploading` → (browser PUT to presigned URL) →
   `complete-upload` → `uploaded` (API verifies size via `HeadObject`) →
   **`processing` → `ready`** (worker: ffprobe + poster `poster.jpg`) or **`failed`**.
@@ -141,14 +141,17 @@ pnpm db:seed
 - **R2 / S3 CORS:** allow `PUT` from your web origin on the bucket; for `<video>` / Range requests,
   allow `GET` from browser origins (or use a CDN origin later). Expose `ETag` if you need multipart.
 
-## Suggested shots (heuristic v1)
+## Suggested shots (multi-signal heuristics)
 
-1. **Detection:** After the worker downloads the upload, it runs **ffmpeg scene-change** detection (`select='gt(scene,T)'` + `showinfo`), parses `pts_time` from stderr, merges nearby hits (~0.35s), caps the list (~40), and maps scene strength to a **confidence** in `[0, 1]`. Failures are logged and **do not** fail the job.
-2. **Storage:** Rows live in **`suggested_shot_events`** with `source` (e.g. `heuristic_v1`), `status` (`suggested` \| `accepted` \| `rejected`), and timestamps. On re-run, the worker deletes only **pending** heuristic rows for that video before inserting a fresh batch so dismissed/accepted history stays intact.
-3. **Workflow:** Review UI lists pending suggestions → **Reject** (PATCH) or **Convert** (POST), which inserts a **`shot_events`** row (`source: manual`, note references the suggestion id) and sets the suggestion to **`accepted`**.
-4. **Limits:** No shot classification or rally context in this slice; **camera cuts are not always shots**. **YouTube-linked videos** skip the heuristic (no local file in this pipeline) — the API returns an empty list for them.
-5. **Future ML:** Replace or supplement `apps/worker/src/heuristic-suggested-shots.ts` with model inference writing the same table under a new `source` (and optional JSON `payload` column later).
-6. **Next task ideas:** “Re-run suggestions” for already-`ready` uploads, an **audio-energy** heuristic pass, or a foreign key from `shot_events` to `suggested_shot_events.id` for audit.
+1. **Pipeline:** `packages/suggestions/` runs three ffmpeg signal extractors in parallel — **scene cuts**, **audio peaks** (astats), **motion spikes** (lower scene threshold) — then **fuses** them in `fuse.ts` (cluster → weighted confidence → min spacing → cap). Entry: `runSuggestionPipeline` from `process-one.ts` after ffprobe. Failures are logged and **do not** fail the job.
+2. **Confidence:** Per cluster, `confidence = weighted_mean(scene, audio, motion)` using env weights (defaults 0.35 / 0.40 / 0.25). Rows below `SUGGESTION_MIN_CONFIDENCE` are dropped. `reason` explains which signals fired (e.g. `audio+motion (68%)`).
+3. **Duplicate suppression:** Hits within `SUGGESTION_MERGE_GAP_SEC` merge to one timestamp; greedy **min spacing** (`SUGGESTION_MIN_SPACING_SEC`) keeps the highest-confidence pick; optional `SUGGESTION_MAX_SPACING_SEC` drops isolated outliers. Worker logs `generated`, `avgConf`, `merged`, `suppressed_threshold`, `suppressed_spacing`.
+4. **Storage:** `suggested_shot_events` stores `reason`, `audio_peak`, `motion_score`, and `debug_metadata` (JSON: `generatedAt`, per-signal scores, suppression counts, `pipelineVersion`). Re-run deletes only **pending** `heuristic_v1` rows.
+5. **Review / debug UI:** `/videos/:id/review` — confidence slider, high-confidence filter, stats (pending/accepted/rejected), debug panel (per-row signals), timeline markers (hollow=pending, green=accepted, gray=rejected), shortcuts **A** accept / **X** reject (when a suggestion is focused; disables shot-type keys), **Accept all ≥ threshold** batch API.
+6. **Tuning (worker `.env`):** `SUGGESTION_MIN_CONFIDENCE`, `SUGGESTION_MIN_SPACING_SEC`, `SUGGESTION_MERGE_GAP_SEC`, `SUGGESTION_MAX_COUNT`, `SUGGESTION_SCENE_THRESHOLD`, `SUGGESTION_MOTION_THRESHOLD`, `SUGGESTION_AUDIO_PEAK_DB`, `SUGGESTION_WEIGHT_*`. Re-process a video (re-upload or future re-run API) after changes.
+7. **Future ML:** Implement `apps/worker/src/suggestions/providers/ml-v1.ts` writing the same table with `source = ml_v1` and reusing `fuse.ts` spacing/thresholds or bypassing them; link `shot_events.suggested_shot_event_id` for audit.
+8. **Regenerate:** `POST /v1/videos/:id/suggested-shot-events/regenerate` downloads the object from S3/R2 and runs `@pickleball/suggestions` synchronously (same pipeline as the worker). Review UI: **Regenerate suggestions** when `ready`. **Long videos:** the request blocks until ffmpeg finishes — use short clips locally or expect gateway timeouts on large files until async jobs exist.
+9. **Next coding task:** Async regeneration job + progress for long videos; export labeled accept/reject sets for ML training.
 
 ## Local development
 

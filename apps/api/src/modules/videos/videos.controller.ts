@@ -21,12 +21,15 @@ import {
 import type {
   ShotEventDTO,
   SuggestedShotEventDTO,
+  SuggestedShotRegenerateSummaryDTO,
+  SuggestedShotStatsDTO,
   VideoDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
 } from "@pickleball/shared";
 import { SHOT_OUTCOMES, SHOT_SIDES, SHOT_TYPES, SUGGESTED_SHOT_STATUSES } from "@pickleball/shared/constants";
 import {
+  zConvertSuggestedShotBatchBody,
   zConvertSuggestedShotBody,
   zCreateShotEventBody,
   zCreateVideoBody,
@@ -41,8 +44,11 @@ import type { AuthContext } from "../../auth/auth.types.js";
 import { ShotEventResponseDto } from "../shot-events/shot-events.dto.js";
 import { ShotEventsService } from "../shot-events/shot-events.service.js";
 import {
+  ConvertSuggestedShotBatchResponseDto,
   ConvertSuggestedShotResponseDto,
   SuggestedShotEventResponseDto,
+  SuggestedShotRegenerateSummaryResponseDto,
+  SuggestedShotStatsResponseDto,
 } from "../suggested-shot-events/suggested-shot-events.dto.js";
 import { SuggestedShotEventsService } from "../suggested-shot-events/suggested-shot-events.service.js";
 import {
@@ -209,6 +215,49 @@ export class VideosController {
       });
     }
     return this.shotEvents.createForVideo(auth, id, parsed.data);
+  }
+
+  @Get(":id/suggested-shot-events/stats")
+  @ApiOkResponse({ type: SuggestedShotStatsResponseDto })
+  suggestedShotEventsStats(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<SuggestedShotStatsDTO> {
+    return this.suggestedShots.statsForVideo(auth, id);
+  }
+
+  @Post(":id/suggested-shot-events/regenerate")
+  @ApiOkResponse({ type: SuggestedShotRegenerateSummaryResponseDto })
+  regenerateSuggestedShotEvents(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<SuggestedShotRegenerateSummaryDTO> {
+    return this.suggestedShots.regenerateForVideo(auth, id);
+  }
+
+  @Post(":id/suggested-shot-events/convert-batch")
+  @ApiOkResponse({ type: ConvertSuggestedShotBatchResponseDto })
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["minConfidence"],
+      properties: { minConfidence: { type: "number", minimum: 0, maximum: 1 } },
+    },
+  })
+  convertSuggestedShotEventsBatch(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ): Promise<{ converted: ShotEventDTO[]; skipped: number }> {
+    const parsed = zConvertSuggestedShotBatchBody.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.suggestedShots.convertBatch(auth, id, parsed.data);
   }
 
   @Get(":id/suggested-shot-events")

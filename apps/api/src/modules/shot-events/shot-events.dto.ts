@@ -31,6 +31,9 @@ export class ShotEventResponseDto implements ShotEventDTO {
   @ApiProperty({ enum: SHOT_EVENT_SOURCES })
   source!: ShotEventDTO["source"];
 
+  @ApiProperty({ type: String, format: "uuid", nullable: true })
+  suggestedShotEventId!: string | null;
+
   @ApiProperty({ type: String, format: "uuid" })
   createdByUserId!: string;
 

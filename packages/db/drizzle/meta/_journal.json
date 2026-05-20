@@ -29,6 +29,20 @@
       "when": 1739836800006,
       "tag": "0004_suggested_shot_events",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1739836800007,
+      "tag": "0005_suggested_shot_debug",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1739836800008,
+      "tag": "0006_shot_events_suggestion_fk",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,9 @@ const schema = z.object({
   PRESIGNED_UPLOAD_EXPIRES_SECONDS: z.coerce.number().int().positive().max(604800).default(3600),
   /** Max TTL for presigned GET (playback / poster). Capped for private media safety. */
   PRESIGNED_READ_EXPIRES_SECONDS: z.coerce.number().int().positive().max(3600).default(900),
+
+  /** Used for on-demand suggestion regeneration (same binary as worker). */
+  FFMPEG_BIN: z.string().default("ffmpeg"),
 });
 
 export type ApiEnv = z.infer<typeof schema>;
