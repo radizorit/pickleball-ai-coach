@@ -9,6 +9,7 @@ import { useAuthedApiClient } from "@/lib/api/use-authed-api-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SuggestedShotsPanel } from "@/components/suggested-shots-panel";
+import { SuggestionReviewQueue } from "@/components/suggestion-review-queue";
 import { VideoCoachingFeedbackPanel } from "@/components/video-coaching-feedback-panel";
 import { VideoShotStatsPanel } from "@/components/video-shot-stats-panel";
 import type { ShotEventDTO, SuggestedShotEventDTO, VideoDTO } from "@pickleball/shared";
@@ -101,6 +102,9 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const allSuggestions = allSuggestionsQ.data ?? [];
 
   const [focusedSuggestion, setFocusedSuggestion] = useState<SuggestedShotEventDTO | null>(null);
+  const [reviewQueueActive, setReviewQueueActive] = useState(false);
+  const [queueCurrentSuggestion, setQueueCurrentSuggestion] = useState<SuggestedShotEventDTO | null>(null);
+  const timelineHighlightSuggestion = reviewQueueActive ? queueCurrentSuggestion : focusedSuggestion;
 
   const createMut = useMutation({
     mutationFn: (body: CreateShotEventBody) => client.videosShotEventsCreate(videoId, body),
@@ -122,6 +126,19 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     mutationFn: (id: string) => client.shotEventsDelete(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["videos", videoId, "shot-events"] });
+    },
+  });
+
+  const trainingExportMut = useMutation({
+    mutationFn: async () => {
+      const data = await client.videosTrainingExport(videoId);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `training-export-${videoId.slice(0, 8)}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
     },
   });
 
@@ -160,6 +177,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
         return;
       }
       if (editingId) return;
+      if (reviewQueueActive) return;
       if (focusedSuggestion) return;
 
       if (e.code === "Space" && videoRef.current && !isYoutube) {
@@ -209,7 +227,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editingId, focusedSuggestion, isYoutube, quickCreate]);
+  }, [editingId, reviewQueueActive, focusedSuggestion, isYoutube, quickCreate]);
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -272,7 +290,8 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   }
 
   const events = eventsQ.data ?? [];
-  const busy = createMut.isPending || updateMut.isPending || deleteMut.isPending;
+  const busy =
+    createMut.isPending || updateMut.isPending || deleteMut.isPending || trainingExportMut.isPending;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -288,11 +307,39 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
             play/pause (uploaded file only).
           </p>
         </div>
+        <div className="flex flex-col items-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => trainingExportMut.mutate()}
+          >
+            {trainingExportMut.isPending ? "Exporting…" : "Download training export"}
+          </Button>
+          {trainingExportMut.error && (
+            <p className="text-destructive max-w-xs text-right text-xs">
+              {trainingExportMut.error instanceof ApiClientError
+                ? trainingExportMut.error.message
+                : "Export failed"}
+            </p>
+          )}
+        </div>
       </div>
 
       <VideoShotStatsPanel videoId={videoId} events={eventsQ.data} isLoading={eventsQ.isLoading} />
 
       <VideoCoachingFeedbackPanel events={eventsQ.data} isLoading={eventsQ.isLoading} />
+
+      {!isYoutube && (
+        <SuggestionReviewQueue
+          videoId={videoId}
+          isYoutube={isYoutube}
+          seekTo={seekTo}
+          onQueueActiveChange={setReviewQueueActive}
+          onCurrentSuggestionChange={setQueueCurrentSuggestion}
+        />
+      )}
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1 space-y-3">
@@ -386,7 +433,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
                     />
                   );
                 }
-                const isFocused = focusedSuggestion?.id === s.id;
+                const isFocused = timelineHighlightSuggestion?.id === s.id;
                 return (
                   <button
                     key={`sug-${s.id}`}
@@ -509,6 +556,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
               processingStatus={v.processingStatus}
               seekTo={seekTo}
               onFocusChange={setFocusedSuggestion}
+              disableShortcuts={reviewQueueActive}
             />
           )}
 

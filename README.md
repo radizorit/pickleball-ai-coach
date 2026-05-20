@@ -120,7 +120,8 @@ pnpm db:seed
   **`GET/POST /v1/videos/:id/shot-events`**, **`PATCH/DELETE /v1/shot-events/:eventId`**
   (manual tags; ownership via `videos.user_id`) — all require a Clerk JWT. DTOs live in `@pickleball/shared`.
   **Suggested shots (upload path):** `GET /v1/videos/:id/suggested-shot-events` (optional `?status=`), **`GET …/stats`**, **`POST …/regenerate`** (re-run heuristics on stored upload), **`POST …/convert-batch`**, **`PATCH /v1/suggested-shot-events/:id`** (`{ "status": "rejected" }` only),
-  **`POST /v1/videos/:videoId/suggested-shot-events/:id/convert`** (creates a manual `shot_events` row linked via `suggested_shot_event_id` and marks the suggestion accepted).
+  **`POST /v1/videos/:videoId/suggested-shot-events/:id/convert`** (creates a manual `shot_events` row linked via `suggested_shot_event_id` and marks the suggestion accepted),
+  **`GET /v1/videos/:id/training-export`** (owner-scoped JSON dataset of suggestions + labels for ML).
 - **Upload flow:** `pending` → (presign) → `uploading` → (browser PUT to presigned URL) →
   `complete-upload` → `uploaded` (API verifies size via `HeadObject`) →
   **`processing` → `ready`** (worker: ffprobe + poster `poster.jpg`) or **`failed`**.

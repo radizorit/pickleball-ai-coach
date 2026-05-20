@@ -34,11 +34,14 @@ export function SuggestedShotsPanel({
   processingStatus,
   seekTo,
   onFocusChange,
+  disableShortcuts = false,
 }: {
   videoId: string;
   processingStatus: VideoDTO["processingStatus"];
   seekTo: (seconds: number) => void;
   onFocusChange?: (suggestion: SuggestedShotEventDTO | null) => void;
+  /** When true (e.g. review queue active), list shortcuts are disabled. */
+  disableShortcuts?: boolean;
 }) {
   const client = useAuthedApiClient();
   const qc = useQueryClient();
@@ -141,6 +144,8 @@ export function SuggestedShotsPanel({
   }, [focused, rejectMut]);
 
   useEffect(() => {
+    if (disableShortcuts) return;
+
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (
@@ -172,7 +177,7 @@ export function SuggestedShotsPanel({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focused, focusablePending.length, acceptFocused, rejectFocused]);
+  }, [disableShortcuts, focused, focusablePending.length, acceptFocused, rejectFocused]);
 
   const stats = statsQ.data;
 

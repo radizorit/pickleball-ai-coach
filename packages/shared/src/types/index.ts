@@ -185,6 +185,47 @@ export interface SuggestedShotEventDTO {
   updatedAt: string;
 }
 
+/** Video context included in ML training export (no signed URLs or storage secrets). */
+export interface VideoTrainingExportVideoMeta {
+  videoId: string;
+  title: string;
+  durationSeconds: number | null;
+  fps: number | null;
+  width: number | null;
+  height: number | null;
+  contentType: string | null;
+  originalFilename: string | null;
+  processingStatus: ProcessingStatus;
+  youtubeUrl: string | null;
+  recordedAt: string | null;
+}
+
+/** One labeled suggestion row for offline ML training. */
+export interface VideoTrainingExportRow {
+  suggestionId: string;
+  suggestionTimestampSeconds: number;
+  confidence: number;
+  reason: string | null;
+  audioPeak: number | null;
+  motionScore: number | null;
+  suggestionStatus: SuggestedShotStatus;
+  suggestionSource: SuggestedShotSource;
+  becameConfirmedShot: boolean;
+  confirmedShotEventId: string | null;
+  confirmedShotType: ShotType | null;
+  confirmedSide: ShotSide | null;
+  confirmedOutcome: ShotOutcome | null;
+  pipelineVersion: string | null;
+}
+
+/** `GET /v1/videos/:id/training-export` — owner-scoped JSON dataset. */
+export interface VideoTrainingExportDTO {
+  schemaVersion: string;
+  exportedAt: string;
+  video: VideoTrainingExportVideoMeta;
+  rows: VideoTrainingExportRow[];
+}
+
 /** Compare suggestion funnel for a video (debug / tuning). */
 export interface SuggestedShotStatsDTO {
   suggested: number;

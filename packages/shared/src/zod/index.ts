@@ -294,3 +294,42 @@ export type ConvertSuggestedShotBody = z.infer<typeof zConvertSuggestedShotBody>
 
 export const zSuggestedShotListFilter = z.union([zSuggestedShotStatus, z.literal("all")]);
 export type SuggestedShotListFilterValidated = z.infer<typeof zSuggestedShotListFilter>;
+
+export const zVideoTrainingExportVideoMeta = z.object({
+  videoId: zUuid,
+  title: z.string(),
+  durationSeconds: z.number().int().nonnegative().nullable(),
+  fps: z.number().int().positive().nullable(),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+  contentType: z.string().nullable(),
+  originalFilename: z.string().nullable(),
+  processingStatus: zProcessingStatus,
+  youtubeUrl: z.string().nullable(),
+  recordedAt: zIsoDateTime.nullable(),
+});
+
+export const zVideoTrainingExportRow = z.object({
+  suggestionId: zUuid,
+  suggestionTimestampSeconds: z.number(),
+  confidence: z.number().min(0).max(1),
+  reason: z.string().nullable(),
+  audioPeak: z.number().nullable(),
+  motionScore: z.number().nullable(),
+  suggestionStatus: zSuggestedShotStatus,
+  suggestionSource: zSuggestedShotSource,
+  becameConfirmedShot: z.boolean(),
+  confirmedShotEventId: zUuid.nullable(),
+  confirmedShotType: zShotType.nullable(),
+  confirmedSide: zShotSide.nullable(),
+  confirmedOutcome: zShotOutcome.nullable(),
+  pipelineVersion: z.string().nullable(),
+});
+
+export const zVideoTrainingExportDTO = z.object({
+  schemaVersion: z.literal("1"),
+  exportedAt: zIsoDateTime,
+  video: zVideoTrainingExportVideoMeta,
+  rows: z.array(zVideoTrainingExportRow),
+});
+export type VideoTrainingExportDTOValidated = z.infer<typeof zVideoTrainingExportDTO>;

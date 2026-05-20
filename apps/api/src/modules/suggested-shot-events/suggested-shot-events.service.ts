@@ -7,6 +7,7 @@ import type {
   SuggestedShotEventDTO,
   SuggestedShotRegenerateSummaryDTO,
   SuggestedShotStatsDTO,
+  VideoTrainingExportDTO,
 } from "@pickleball/shared";
 import type { ConvertSuggestedShotBody, ConvertSuggestedShotBatchBody } from "@pickleball/shared/zod";
 import { runSuggestionPipeline } from "@pickleball/suggestions";
@@ -97,6 +98,82 @@ export class SuggestedShotEventsService {
       .orderBy(asc(suggestedShotEvents.timestampSeconds), asc(suggestedShotEvents.createdAt));
 
     return rows.map(suggestedToDto);
+  }
+
+  async trainingExportForVideo(auth: AuthContext, videoId: string): Promise<VideoTrainingExportDTO> {
+    await this.assertVideoOwned(auth, videoId);
+    const db = getDb();
+
+    const [video] = await db
+      .select({
+        id: videos.id,
+        title: videos.title,
+        durationSeconds: videos.durationSeconds,
+        fps: videos.fps,
+        width: videos.width,
+        height: videos.height,
+        contentType: videos.contentType,
+        originalFilename: videos.originalFilename,
+        processingStatus: videos.processingStatus,
+        youtubeUrl: videos.youtubeUrl,
+        recordedAt: videos.recordedAt,
+      })
+      .from(videos)
+      .where(and(eq(videos.id, videoId), isNull(videos.deletedAt)))
+      .limit(1);
+
+    if (!video) {
+      throw new NotFoundException("Video not found");
+    }
+
+    const joined = await db
+      .select({
+        suggestion: suggestedShotEvents,
+        shot: shotEvents,
+      })
+      .from(suggestedShotEvents)
+      .leftJoin(shotEvents, eq(shotEvents.suggestedShotEventId, suggestedShotEvents.id))
+      .where(eq(suggestedShotEvents.videoId, videoId))
+      .orderBy(asc(suggestedShotEvents.timestampSeconds), asc(suggestedShotEvents.createdAt));
+
+    const rows = joined.map(({ suggestion: s, shot }) => {
+      const becameConfirmedShot = s.status === "accepted" || shot != null;
+      return {
+        suggestionId: s.id,
+        suggestionTimestampSeconds: s.timestampSeconds,
+        confidence: s.confidence,
+        reason: s.reason ?? null,
+        audioPeak: s.audioPeak ?? null,
+        motionScore: s.motionScore ?? null,
+        suggestionStatus: s.status,
+        suggestionSource: s.source,
+        becameConfirmedShot,
+        confirmedShotEventId: shot?.id ?? null,
+        confirmedShotType: shot?.shotType ?? null,
+        confirmedSide: shot?.side ?? null,
+        confirmedOutcome: shot?.outcome ?? null,
+        pipelineVersion: s.debugMetadata?.pipelineVersion ?? s.source,
+      };
+    });
+
+    return {
+      schemaVersion: "1",
+      exportedAt: new Date().toISOString(),
+      video: {
+        videoId: video.id,
+        title: video.title,
+        durationSeconds: video.durationSeconds,
+        fps: video.fps,
+        width: video.width,
+        height: video.height,
+        contentType: video.contentType ?? null,
+        originalFilename: video.originalFilename ?? null,
+        processingStatus: video.processingStatus,
+        youtubeUrl: video.youtubeUrl ?? null,
+        recordedAt: video.recordedAt ? toIso(video.recordedAt) : null,
+      },
+      rows,
+    };
   }
 
   async statsForVideo(auth: AuthContext, videoId: string): Promise<SuggestedShotStatsDTO> {

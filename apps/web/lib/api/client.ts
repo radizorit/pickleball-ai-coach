@@ -15,6 +15,7 @@ import type {
   VideoDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
+  VideoTrainingExportDTO,
 } from "@pickleball/shared";
 import type {
   ConvertSuggestedShotBatchBody,
@@ -146,6 +147,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
       request<SuggestedShotRegenerateSummaryDTO>(
         `/v1/videos/${encodeURIComponent(videoId)}/suggested-shot-events/regenerate`,
         { method: "POST" },
+      ),
+    videosTrainingExport: (videoId: string) =>
+      request<VideoTrainingExportDTO>(
+        `/v1/videos/${encodeURIComponent(videoId)}/training-export`,
       ),
     videosSuggestedShotEventsConvertBatch: (videoId: string, body: ConvertSuggestedShotBatchBody) =>
       request<{ converted: ShotEventDTO[]; skipped: number }>(

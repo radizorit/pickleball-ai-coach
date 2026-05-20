@@ -24,6 +24,7 @@ import type {
   SuggestedShotRegenerateSummaryDTO,
   SuggestedShotStatsDTO,
   VideoDTO,
+  VideoTrainingExportDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
 } from "@pickleball/shared";
@@ -50,6 +51,7 @@ import {
   SuggestedShotRegenerateSummaryResponseDto,
   SuggestedShotStatsResponseDto,
 } from "../suggested-shot-events/suggested-shot-events.dto.js";
+import { VideoTrainingExportResponseDto } from "../suggested-shot-events/training-export.dto.js";
 import { SuggestedShotEventsService } from "../suggested-shot-events/suggested-shot-events.service.js";
 import {
   VideoPresignedReadResponseDto,
@@ -313,6 +315,15 @@ export class VideosController {
       });
     }
     return this.suggestedShots.convertSuggestion(auth, id, suggestionId, parsed.data);
+  }
+
+  @Get(":id/training-export")
+  @ApiOkResponse({ type: VideoTrainingExportResponseDto })
+  trainingExport(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<VideoTrainingExportDTO> {
+    return this.suggestedShots.trainingExportForVideo(auth, id);
   }
 
   @Get(":id")
