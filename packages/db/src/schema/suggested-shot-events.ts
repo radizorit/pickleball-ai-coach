@@ -26,6 +26,11 @@ export type SuggestedShotDebugMetadata = {
   suppressedBelowThreshold?: number;
   suppressedSpacing?: number;
   suppressedMaxCount?: number;
+  kind?: "contact" | "rally_start" | "rally_end";
+  proposedRallyIndex?: number;
+  endOfRallyLikely?: boolean;
+  proposedRallyCount?: number;
+  contactCount?: number;
 };
 
 /**

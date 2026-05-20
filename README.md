@@ -58,7 +58,7 @@ Node / Drizzle / Next.
 
 ## Prerequisites
 
-- Node 20.17+ (see `.nvmrc`)
+- Node 22.14+ (see `.nvmrc`)
 - pnpm 9 (`corepack enable && corepack prepare pnpm@9.15.0 --activate`)
 - Docker (only for local Postgres)
 
@@ -105,7 +105,7 @@ pnpm db:seed
 ## Video records (upload foundation)
 
 - **Web:** `/videos`, `/videos/new` (create via **YouTube link** or **file upload** with progress),
-  `/videos/:id` detail, **`/videos/:id/review`** (manual shot tagging with **player labels and rally segments**, **heuristic suggested moments** on uploads, timeline + **rule-based coaching feedback** from tags).
+  `/videos/:id` detail, **`/videos/:id/review`** (Me-only gold tagging, **side-switch** markers, rally segments, heuristic suggestions, coaching from Me tags). See [docs/SOLO_TAGGING.md](docs/SOLO_TAGGING.md) and [docs/GOLD_LABEL_RULES.md](docs/GOLD_LABEL_RULES.md).
 - **YouTube link (quick testing):** On `/videos/new`, choose **YouTube link**, paste a watch URL
   (`youtube.com`, `youtu.be`, etc.). The API stores `youtubeUrl`, sets **`processingStatus` to
   `ready` immediately** (no S3 object, no worker job). The detail page uses an **embed** and
@@ -119,6 +119,8 @@ pnpm db:seed
   (signed GET for S3-backed media),
   **`GET/POST /v1/videos/:id/shot-events`**, **`PATCH/DELETE /v1/shot-events/:eventId`**
   (manual tags; ownership via `videos.user_id`) — all require a Clerk JWT. DTOs live in `@pickleball/shared`.
+  **`PATCH /v1/videos/:id`** — update `focusPlayerSlot`. **`POST /v1/videos/:id/reset-labels`** — clear shots, rallies, side switches for a fresh gold session. **`GET/POST /v1/videos/:id/side-switches`**, **`DELETE /v1/side-switches/:id`**. **`GET/PUT /v1/videos/:id/players`** — display names (Me defaults on P1).
+
   **Suggested shots (upload path):** `GET /v1/videos/:id/suggested-shot-events` (optional `?status=`), **`GET …/stats`**, **`POST …/regenerate`** (re-run heuristics on stored upload), **`POST …/convert-batch`**, **`PATCH /v1/suggested-shot-events/:id`** (`{ "status": "rejected" }` only),
   **`POST /v1/videos/:videoId/suggested-shot-events/:id/convert`** (creates a manual `shot_events` row linked via `suggested_shot_event_id` and marks the suggestion accepted),
   **`GET /v1/videos/:id/training-export`** (owner-scoped JSON dataset of suggestions + labels for ML).
@@ -142,17 +144,17 @@ pnpm db:seed
 - **R2 / S3 CORS:** allow `PUT` from your web origin on the bucket; for `<video>` / Range requests,
   allow `GET` from browser origins (or use a CDN origin later). Expose `ETag` if you need multipart.
 
-## Suggested shots (multi-signal heuristics)
+## Suggested shots (visual rally v3, default)
 
-1. **Pipeline:** `packages/suggestions/` runs three ffmpeg signal extractors in parallel — **scene cuts**, **audio peaks** (astats), **motion spikes** (lower scene threshold) — then **fuses** them in `fuse.ts` (cluster → weighted confidence → min spacing → cap). Entry: `runSuggestionPipeline` from `process-one.ts` after ffprobe. Failures are logged and **do not** fail the job.
-2. **Confidence:** Per cluster, `confidence = weighted_mean(scene, audio, motion)` using env weights (defaults 0.35 / 0.40 / 0.25). Rows below `SUGGESTION_MIN_CONFIDENCE` are dropped. `reason` explains which signals fired (e.g. `audio+motion (68%)`).
-3. **Duplicate suppression:** Hits within `SUGGESTION_MERGE_GAP_SEC` merge to one timestamp; greedy **min spacing** (`SUGGESTION_MIN_SPACING_SEC`) keeps the highest-confidence pick; optional `SUGGESTION_MAX_SPACING_SEC` drops isolated outliers. Worker logs `generated`, `avgConf`, `merged`, `suppressed_threshold`, `suppressed_spacing`.
-4. **Storage:** `suggested_shot_events` stores `reason`, `audio_peak`, `motion_score`, and `debug_metadata` (JSON: `generatedAt`, per-signal scores, suppression counts, `pipelineVersion`). Re-run deletes only **pending** `heuristic_v1` / `heuristic_v2` rows (accepted/rejected kept).
-5. **Review / debug UI:** `/videos/:id/review` — confidence slider, high-confidence filter, stats (pending/accepted/rejected), debug panel (per-row signals), timeline markers (hollow=pending, green=accepted, gray=rejected), shortcuts **A** accept / **X** reject (when a suggestion is focused; disables shot-type keys), **Accept all ≥ threshold** batch API.
-6. **Tuning (worker / API `.env`):** `SUGGESTION_MIN_CONFIDENCE`, `SUGGESTION_MIN_SPACING_SEC`, `SUGGESTION_MERGE_GAP_SEC`, `SUGGESTION_MAX_COUNT`, `SUGGESTION_SCENE_THRESHOLD`, `SUGGESTION_MOTION_THRESHOLD`, `SUGGESTION_AUDIO_PEAK_DB`, `SUGGESTION_WEIGHT_*`, `SUGGESTION_SCENE_SAMPLE_FPS` (default 8; set `0` for full-rate decode), `SUGGESTION_DEBUG_PIPELINE=1` (logs raw hit counts/timestamps + fuse stages). Re-process a video (re-upload or future re-run API) after changes.
-7. **Future ML:** Implement `apps/worker/src/suggestions/providers/ml-v1.ts` writing the same table with `source = ml_v1` and reusing `fuse.ts` spacing/thresholds or bypassing them; link `shot_events.suggested_shot_event_id` for audit.
-8. **Regenerate:** `POST /v1/videos/:id/suggested-shot-events/regenerate` downloads the object from S3/R2 and runs `@pickleball/suggestions` synchronously (same pipeline as the worker). Review UI: **Regenerate suggestions** when `ready`. **Long videos:** the request blocks until ffmpeg finishes — use short clips locally or expect gateway timeouts on large files until async jobs exist.
-9. **Next coding task:** Async regeneration job + progress for long videos; export labeled accept/reject sets for ML training.
+1. **Pipeline (default `heuristic_v3`):** `packages/suggestions/` samples motion energy in a court ROI (`signals/visual-energy.ts`), proposes rally spans from stillness + activity (`rally-segments.ts`), then emits **contact peaks per rally** (`contact-peaks.ts`, source `heuristic_v3`). Legacy v2 (`SUGGESTION_PIPELINE_VERSION=v2`) still fuses scene/audio/motion globally. Entry: `runSuggestionPipeline` from the worker and regenerate API. Failures are logged and **do not** fail the job.
+2. **Audio:** Off by default (`SUGGESTION_ENABLE_AUDIO=0`). When enabled, audio is a weak tie-breaker only (default fuse weight 0.08 in v2; optional boost in v3). Vision weights dominate.
+3. **Rally proposals:** Pending rows in `suggested_rallies`; review UI shows dashed amber timeline bands — **Accept** creates a `rallies` row; **Reject** dismisses. Confirmed rallies show as solid bars; set **active rally** before accepting contact suggestions.
+4. **Contact suggestions:** `suggested_shot_events` with `debug_metadata.kind = contact`, optional `proposedRallyIndex` and `endOfRallyLikely`. Convert / batch convert pass `rallyId`, `playerSlot`, and `endsRally` from the review form (never auto-fills outcome or winner).
+5. **Court ROI:** Optional `videos.court_corners` (normalized quad). `PUT /v1/videos/:id/court-corners` or review **Court ROI** preset; regenerate suggestions after saving.
+6. **Storage / re-run:** Regenerate deletes pending `heuristic_v3` shot rows and `suggested_rallies` proposals (accepted/rejected history kept). Training export schema v2 adds rallies, suggested rallies, shots, and v3 debug fields.
+7. **Tuning (worker / API `.env`):** `SUGGESTION_PIPELINE_VERSION` (`v3` default, `v2` legacy), `SUGGESTION_ENABLE_AUDIO`, `SUGGESTION_SCENE_SAMPLE_FPS` (default 8), `SUGGESTION_STILLNESS_*`, `SUGGESTION_RALLY_*`, `SUGGESTION_CONTACT_*`, `SUGGESTION_MAX_PROPOSED_RALLIES`, plus v2 keys (`SUGGESTION_MIN_CONFIDENCE`, `SUGGESTION_WEIGHT_*`, …). `SUGGESTION_DEBUG_PIPELINE=1` logs pipeline stages.
+8. **Regenerate:** `POST /v1/videos/:id/suggested-shot-events/regenerate` (uses stored `court_corners`). **Long videos:** synchronous — expect timeouts until async jobs exist.
+9. **Future ML:** Same tables; `source = ml_v1`; human corrections via training export v2.
 
 ## Local development
 

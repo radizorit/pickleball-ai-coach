@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useMemo } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ShotEventDTO } from "@pickleball/shared";
-import { computeVideoShotStats, type VideoShotStats } from "@pickleball/shared";
+import type { ShotEventDTO, VideoPlayerDTO } from "@pickleball/shared";
+import { computeSoloPlayerStats, computeVideoShotStats, type VideoShotStats } from "@pickleball/shared";
+import type { VideoPlayerSlot } from "@pickleball/shared/constants";
 
 function pct(part: number, whole: number): string {
   if (whole <= 0) return "0%";
@@ -23,19 +24,37 @@ function labelMistake(o: NonNullable<VideoShotStats["mostCommonMistake"]>): stri
   }
 }
 
+function focusDisplayName(
+  focusPlayerSlot: VideoPlayerSlot,
+  players: VideoPlayerDTO[] | undefined,
+): string {
+  const name = players?.find((p) => p.slot === focusPlayerSlot)?.displayName?.trim();
+  if (name) return name;
+  return focusPlayerSlot === "player_1" ? "Me" : "P2";
+}
+
 export function VideoShotStatsPanel({
   videoId,
   events,
   isLoading,
   showReviewLink = false,
+  focusPlayerSlot,
+  players,
 }: {
   videoId: string;
   events: ShotEventDTO[] | undefined;
   isLoading: boolean;
-  /** When on the detail page, link to the review studio for tagging. */
   showReviewLink?: boolean;
+  focusPlayerSlot?: VideoPlayerSlot;
+  players?: VideoPlayerDTO[];
 }) {
-  const stats = useMemo(() => computeVideoShotStats(events ?? []), [events]);
+  const statsAll = useMemo(() => computeVideoShotStats(events ?? []), [events]);
+  const solo = useMemo(() => {
+    if (!focusPlayerSlot) return null;
+    return computeSoloPlayerStats(events ?? [], focusPlayerSlot);
+  }, [events, focusPlayerSlot]);
+
+  const stats = solo?.myShots ?? statsAll;
 
   if (isLoading) {
     return (
@@ -53,6 +72,7 @@ export function VideoShotStatsPanel({
 
   const { totalShots, sideBreakdown } = stats;
   const sideTotal = sideBreakdown.forehand + sideBreakdown.backhand + sideBreakdown.other;
+  const meName = focusPlayerSlot ? focusDisplayName(focusPlayerSlot, players) : null;
 
   return (
     <Card>
@@ -61,8 +81,14 @@ export function VideoShotStatsPanel({
           <div>
             <CardTitle className="text-base">Shot stats</CardTitle>
             <CardDescription>
-              From manual tags only ·{" "}
-              {totalShots === 0 ? "Add shots in review to see stats." : `${totalShots} tagged`}
+              {focusPlayerSlot ? (
+                <>Stats for {meName} — Me-only tags</>
+              ) : (
+                <>
+                  From manual tags only ·{" "}
+                  {totalShots === 0 ? "Add shots in review to see stats." : `${totalShots} tagged`}
+                </>
+              )}
             </CardDescription>
           </div>
           {showReviewLink && (
@@ -78,18 +104,18 @@ export function VideoShotStatsPanel({
       <CardContent className="text-muted-foreground space-y-6 text-sm">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border p-3">
-            <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Total shots</p>
+            <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">My tagged shots</p>
             <p className="text-foreground mt-1 text-2xl font-semibold tabular-nums">{stats.totalShots}</p>
           </div>
           <div className="rounded-lg border p-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Winners</p>
             <p className="text-foreground mt-1 text-2xl font-semibold tabular-nums">{stats.winners}</p>
-            <p className="text-xs">{pct(stats.winners, totalShots)} of tags</p>
+            <p className="text-xs">{pct(stats.winners, totalShots)} of my tags</p>
           </div>
           <div className="rounded-lg border p-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Unforced errors</p>
             <p className="text-foreground mt-1 text-2xl font-semibold tabular-nums">{stats.unforcedErrors}</p>
-            <p className="text-xs">{pct(stats.unforcedErrors, totalShots)} of tags</p>
+            <p className="text-xs">{pct(stats.unforcedErrors, totalShots)} of my tags</p>
           </div>
           <div className="rounded-lg border p-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Most common mistake</p>
@@ -99,7 +125,7 @@ export function VideoShotStatsPanel({
             {stats.mostCommonMistake && (
               <p className="text-xs">
                 {stats.errorsByOutcome[stats.mostCommonMistake]}× (
-                {pct(stats.errorsByOutcome[stats.mostCommonMistake], totalShots)} of tags)
+                {pct(stats.errorsByOutcome[stats.mostCommonMistake], totalShots)} of my tags)
               </p>
             )}
           </div>
@@ -107,7 +133,7 @@ export function VideoShotStatsPanel({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="text-foreground mb-2 text-xs font-medium uppercase tracking-wide">Errors by outcome</p>
+            <p className="text-foreground mb-2 text-xs font-medium uppercase tracking-wide">My errors by outcome</p>
             <ul className="space-y-1">
               {(
                 [

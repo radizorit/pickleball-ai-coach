@@ -73,10 +73,31 @@ export interface VideoDTO {
   failureMessage: string | null;
   privacy: VideoPrivacy;
   matchType: MatchType | null;
+  /** Normalized court quad for vision ROI (0–1). */
+  courtCorners: VideoCourtCorners | null;
+  /** Solo analysis subject slot (convention: player_1 = Me). */
+  focusPlayerSlot: VideoPlayerSlot;
   recordedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+/** `POST /v1/videos/:id/reset-labels` — counts cleared for a fresh gold session. */
+export interface VideoResetLabelsSummaryDTO {
+  deletedShots: number;
+  deletedRallies: number;
+  deletedSideSwitches: number;
+  resetShotSuggestions: number;
+  resetRallySuggestions: number;
+}
+
+/** Court corners in normalized video coordinates. */
+export type VideoCourtCorners = [
+  { x: number; y: number },
+  { x: number; y: number },
+  { x: number; y: number },
+  { x: number; y: number },
+];
 
 /** Short-lived signed GET for private media (`GET /v1/videos/:id/read-url`). */
 export interface VideoPresignedReadDTO {
@@ -132,6 +153,16 @@ export interface VideoPlayerDTO {
   videoId: string;
   slot: VideoPlayerSlot;
   displayName: string | null;
+}
+
+/** Court end switch logged in Review (`GET/POST /v1/videos/:id/side-switches`). */
+export interface VideoSideSwitchDTO {
+  id: string;
+  videoId: string;
+  timestampSeconds: number;
+  note: string | null;
+  segmentIndex: number | null;
+  createdAt: string;
 }
 
 /** Manual rally segment on a video (seconds, aligned with shot timestamps). */
@@ -209,6 +240,24 @@ export interface SuggestedShotDebugMetadata {
   suppressedBelowThreshold?: number;
   suppressedSpacing?: number;
   suppressedMaxCount?: number;
+  kind?: "contact" | "rally_start" | "rally_end";
+  proposedRallyIndex?: number;
+  endOfRallyLikely?: boolean;
+  proposedRallyCount?: number;
+  contactCount?: number;
+}
+
+/** Proposed rally span from heuristic_v3 (human confirms into `VideoRallyDTO`). */
+export interface SuggestedRallyDTO {
+  id: string;
+  videoId: string;
+  proposalIndex: number;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  confidence: number;
+  status: SuggestedShotStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Heuristic (or future ML) shot moment candidate — not a confirmed tag until converted. */
@@ -258,6 +307,35 @@ export interface VideoTrainingExportRow {
   confirmedSide: ShotSide | null;
   confirmedOutcome: ShotOutcome | null;
   pipelineVersion: string | null;
+  debugKind?: string | null;
+  proposedRallyIndex?: number | null;
+  endOfRallyLikely?: boolean | null;
+}
+
+export interface VideoTrainingExportRallyRow {
+  rallyId: string;
+  startTimeSeconds: number;
+  endTimeSeconds: number | null;
+  winningPlayerSlot: VideoPlayerSlot | null;
+  endReason: RallyEndReason | null;
+  shotCount: number;
+}
+
+export interface VideoTrainingExportSuggestedRallyRow {
+  suggestedRallyId: string;
+  proposalIndex: number;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  confidence: number;
+  status: SuggestedShotStatus;
+  acceptedRallyId: string | null;
+}
+
+export interface VideoTrainingExportSideSwitchRow {
+  id: string;
+  timestampSeconds: number;
+  note: string | null;
+  segmentIndex: number | null;
 }
 
 /** `GET /v1/videos/:id/training-export` — owner-scoped JSON dataset. */
@@ -266,6 +344,20 @@ export interface VideoTrainingExportDTO {
   exportedAt: string;
   video: VideoTrainingExportVideoMeta;
   rows: VideoTrainingExportRow[];
+  rallies?: VideoTrainingExportRallyRow[];
+  suggestedRallies?: VideoTrainingExportSuggestedRallyRow[];
+  sideSwitches?: VideoTrainingExportSideSwitchRow[];
+  shots?: Array<{
+    shotEventId: string;
+    timestampSeconds: number;
+    rallyId: string | null;
+    playerSlot: VideoPlayerSlot | null;
+    shotIndexInRally: number | null;
+    endsRally: boolean;
+    shotType: ShotType;
+    side: ShotSide;
+    outcome: ShotOutcome;
+  }>;
 }
 
 /** Compare suggestion funnel for a video (debug / tuning). */

@@ -7,6 +7,7 @@ import {
   Inject,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -23,14 +24,17 @@ import type {
   RallyConsistencyStatsDTO,
   ShotEventDTO,
   SuggestedShotEventDTO,
+  SuggestedRallyDTO,
   SuggestedShotRegenerateSummaryDTO,
   SuggestedShotStatsDTO,
   VideoDTO,
   VideoPlayerDTO,
   VideoRallyDTO,
+  VideoSideSwitchDTO,
   VideoTrainingExportDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
+  VideoResetLabelsSummaryDTO,
 } from "@pickleball/shared";
 import {
   SHOT_OUTCOMES,
@@ -44,9 +48,12 @@ import {
   zConvertSuggestedShotBody,
   zCreateRallyBody,
   zCreateShotEventBody,
+  zCreateVideoSideSwitchBody,
   zCreateVideoBody,
+  zPatchVideoBody,
   zPresignVideoUploadBody,
   zSuggestedShotListFilter,
+  zUpsertCourtCornersBody,
   zUpsertVideoPlayersBody,
   zVideoReadAsset,
 } from "@pickleball/shared/zod";
@@ -55,11 +62,15 @@ import { AuthGuard } from "../../auth/auth.guard.js";
 import { CurrentAuth } from "../../auth/current-auth.decorator.js";
 import type { AuthContext } from "../../auth/auth.types.js";
 import {
+  AcceptSuggestedRallyResponseDto,
   RallyConsistencyStatsResponseDto,
+  SuggestedRallyResponseDto,
   VideoPlayerResponseDto,
   VideoRallyResponseDto,
 } from "../rallies/rallies.dto.js";
 import { RalliesService } from "../rallies/rallies.service.js";
+import { VideoSideSwitchResponseDto } from "../side-switches/side-switches.dto.js";
+import { SideSwitchesService } from "../side-switches/side-switches.service.js";
 import { ShotEventResponseDto } from "../shot-events/shot-events.dto.js";
 import { ShotEventsService } from "../shot-events/shot-events.service.js";
 import {
@@ -74,6 +85,7 @@ import { SuggestedShotEventsService } from "../suggested-shot-events/suggested-s
 import {
   VideoPresignedReadResponseDto,
   VideoPresignedUploadResponseDto,
+  VideoResetLabelsSummaryResponseDto,
   VideoResponseDto,
 } from "./videos.dto.js";
 import { VideosService } from "./videos.service.js";
@@ -88,6 +100,7 @@ export class VideosController {
     @Inject(RalliesService) private readonly rallies: RalliesService,
     @Inject(ShotEventsService) private readonly shotEvents: ShotEventsService,
     @Inject(SuggestedShotEventsService) private readonly suggestedShots: SuggestedShotEventsService,
+    @Inject(SideSwitchesService) private readonly sideSwitches: SideSwitchesService,
   ) {}
 
   @Get()
@@ -270,6 +283,90 @@ export class VideosController {
     return this.rallies.consistencyForVideo(auth, id);
   }
 
+  @Get(":id/suggested-rallies")
+  @ApiOkResponse({ type: SuggestedRallyResponseDto, isArray: true })
+  listSuggestedRallies(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<SuggestedRallyDTO[]> {
+    return this.rallies.listSuggestedRallies(auth, id);
+  }
+
+  @Post(":id/suggested-rallies/:suggestedRallyId/accept")
+  @ApiOkResponse({ type: AcceptSuggestedRallyResponseDto })
+  acceptSuggestedRally(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Param("suggestedRallyId", new ParseUUIDPipe()) suggestedRallyId: string,
+  ) {
+    return this.rallies.acceptSuggestedRally(auth, id, suggestedRallyId);
+  }
+
+  @Post(":id/suggested-rallies/:suggestedRallyId/reject")
+  @ApiOkResponse({ type: SuggestedRallyResponseDto })
+  rejectSuggestedRally(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Param("suggestedRallyId", new ParseUUIDPipe()) suggestedRallyId: string,
+  ): Promise<SuggestedRallyDTO> {
+    return this.rallies.rejectSuggestedRally(auth, id, suggestedRallyId);
+  }
+
+  @Put(":id/court-corners")
+  @ApiOkResponse({ type: VideoResponseDto })
+  upsertCourtCorners(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ): Promise<VideoDTO> {
+    const parsed = zUpsertCourtCornersBody.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.videosService.upsertCourtCorners(auth, id, parsed.data);
+  }
+
+  @Get(":id/side-switches")
+  @ApiOkResponse({ type: VideoSideSwitchResponseDto, isArray: true })
+  listSideSwitches(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<VideoSideSwitchDTO[]> {
+    return this.sideSwitches.listForVideo(auth, id);
+  }
+
+  @Post(":id/side-switches")
+  @ApiOkResponse({ type: VideoSideSwitchResponseDto })
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["timestampSeconds"],
+      properties: {
+        timestampSeconds: { type: "number", minimum: 0 },
+        note: { type: "string", nullable: true },
+      },
+    },
+  })
+  createSideSwitch(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ): Promise<VideoSideSwitchDTO> {
+    const parsed = zCreateVideoSideSwitchBody.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.sideSwitches.createForVideo(auth, id, parsed.data);
+  }
+
   @Get(":id/shot-events")
   @ApiOkResponse({ type: ShotEventResponseDto, isArray: true })
   listShotEvents(
@@ -411,6 +508,15 @@ export class VideosController {
     return this.suggestedShots.convertSuggestion(auth, id, suggestionId, parsed.data);
   }
 
+  @Post(":id/reset-labels")
+  @ApiOkResponse({ type: VideoResetLabelsSummaryResponseDto })
+  resetLabels(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<VideoResetLabelsSummaryDTO> {
+    return this.videosService.resetLabelsForVideo(auth, id);
+  }
+
   @Get(":id/training-export")
   @ApiOkResponse({ type: VideoTrainingExportResponseDto })
   trainingExport(
@@ -418,6 +524,24 @@ export class VideosController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ): Promise<VideoTrainingExportDTO> {
     return this.suggestedShots.trainingExportForVideo(auth, id);
+  }
+
+  @Patch(":id")
+  @ApiOkResponse({ type: VideoResponseDto })
+  patchVideo(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ): Promise<VideoDTO> {
+    const parsed = zPatchVideoBody.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "Validation failed",
+        details: parsed.error.flatten(),
+      });
+    }
+    return this.videosService.patchVideo(auth, id, parsed.data);
   }
 
   @Get(":id")

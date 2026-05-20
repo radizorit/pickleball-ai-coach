@@ -56,7 +56,7 @@ export const SHOT_EVENT_SOURCES = ["manual", "ai_suggested", "ai_accepted", "ai_
 export type ShotEventSource = (typeof SHOT_EVENT_SOURCES)[number];
 
 /** Worker/API-generated shot *candidates* (separate from confirmed `shot_events`). */
-export const SUGGESTED_SHOT_SOURCES = ["heuristic_v1", "heuristic_v2"] as const;
+export const SUGGESTED_SHOT_SOURCES = ["heuristic_v1", "heuristic_v2", "heuristic_v3"] as const;
 export type SuggestedShotSource = (typeof SUGGESTED_SHOT_SOURCES)[number];
 
 export const SUGGESTED_SHOT_STATUSES = ["suggested", "accepted", "rejected"] as const;

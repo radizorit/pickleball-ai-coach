@@ -23,9 +23,11 @@ function avg(nums: number[]): number | null {
 export function RallyConsistencyPanel({
   videoId,
   players,
+  focusPlayerSlot,
 }: {
   videoId: string;
   players: VideoPlayerDTO[] | undefined;
+  focusPlayerSlot?: VideoPlayerSlot;
 }) {
   const client = useAuthedApiClient();
   const q = useQuery({
@@ -59,6 +61,9 @@ export function RallyConsistencyPanel({
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Rally consistency</CardTitle>
         <CardDescription>
+          {focusPlayerSlot
+            ? "Point-level rally metrics (all closed rallies on this video)."
+            : null}{" "}
           {hasData
             ? `${closed} closed rally${closed === 1 ? "" : "ies"} · ${stats?.openRallyCount ?? 0} open`
             : "Create rallies and close them (or mark “ends rally” on a shot) to see metrics."}

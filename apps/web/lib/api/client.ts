@@ -10,6 +10,7 @@ import type {
   RallyConsistencyStatsDTO,
   ShotEventDTO,
   SuggestedShotEventDTO,
+  SuggestedRallyDTO,
   SuggestedShotRegenerateSummaryDTO,
   SuggestedShotStatsDTO,
   UserDTO,
@@ -18,6 +19,8 @@ import type {
   VideoRallyDTO,
   VideoPresignedReadDTO,
   VideoPresignedUploadDTO,
+  VideoResetLabelsSummaryDTO,
+  VideoSideSwitchDTO,
   VideoTrainingExportDTO,
 } from "@pickleball/shared";
 import type {
@@ -25,11 +28,14 @@ import type {
   ConvertSuggestedShotBody,
   CreateRallyBody,
   CreateShotEventBody,
+  CreateVideoSideSwitchBody,
   CreateVideoBody,
+  PatchVideoBody,
   PresignVideoUploadBody,
   UpdateRallyBody,
   UpdateShotEventBody,
   UpdateSuggestedShotBody,
+  UpsertCourtCornersBody,
   UpsertVideoPlayersBody,
 } from "@pickleball/shared/zod";
 
@@ -112,6 +118,16 @@ export function createApiClient(options: ApiClientOptions = {}) {
     mePing: () => request<{ ok: true; externalAuthId: string }>("/v1/me/ping"),
     videosList: () => request<VideoDTO[]>("/v1/videos"),
     videosGet: (id: string) => request<VideoDTO>(`/v1/videos/${encodeURIComponent(id)}`),
+    videosPatch: (id: string, body: PatchVideoBody) =>
+      request<VideoDTO>(`/v1/videos/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    videosResetLabels: (videoId: string) =>
+      request<VideoResetLabelsSummaryDTO>(
+        `/v1/videos/${encodeURIComponent(videoId)}/reset-labels`,
+        { method: "POST" },
+      ),
     videosCreate: (body: CreateVideoBody) =>
       request<VideoDTO>("/v1/videos", { method: "POST", body: JSON.stringify(body) }),
     videosPresignUpload: (id: string, body: PresignVideoUploadBody) =>
@@ -146,6 +162,25 @@ export function createApiClient(options: ApiClientOptions = {}) {
       request<RallyConsistencyStatsDTO>(
         `/v1/videos/${encodeURIComponent(videoId)}/rally-consistency`,
       ),
+    videosSuggestedRalliesList: (videoId: string) =>
+      request<SuggestedRallyDTO[]>(
+        `/v1/videos/${encodeURIComponent(videoId)}/suggested-rallies`,
+      ),
+    videosSuggestedRallyAccept: (videoId: string, suggestedRallyId: string) =>
+      request<{ rally: VideoRallyDTO; suggestion: SuggestedRallyDTO }>(
+        `/v1/videos/${encodeURIComponent(videoId)}/suggested-rallies/${encodeURIComponent(suggestedRallyId)}/accept`,
+        { method: "POST" },
+      ),
+    videosSuggestedRallyReject: (videoId: string, suggestedRallyId: string) =>
+      request<SuggestedRallyDTO>(
+        `/v1/videos/${encodeURIComponent(videoId)}/suggested-rallies/${encodeURIComponent(suggestedRallyId)}/reject`,
+        { method: "POST" },
+      ),
+    videosCourtCornersUpsert: (videoId: string, body: UpsertCourtCornersBody) =>
+      request<VideoDTO>(`/v1/videos/${encodeURIComponent(videoId)}/court-corners`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
     ralliesUpdate: (rallyId: string, body: UpdateRallyBody) =>
       request<VideoRallyDTO>(`/v1/rallies/${encodeURIComponent(rallyId)}`, {
         method: "PATCH",
@@ -153,6 +188,19 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     ralliesDelete: (rallyId: string) =>
       request<{ ok: true }>(`/v1/rallies/${encodeURIComponent(rallyId)}`, {
+        method: "DELETE",
+      }),
+    videosSideSwitchesList: (videoId: string) =>
+      request<VideoSideSwitchDTO[]>(
+        `/v1/videos/${encodeURIComponent(videoId)}/side-switches`,
+      ),
+    videosSideSwitchesCreate: (videoId: string, body: CreateVideoSideSwitchBody) =>
+      request<VideoSideSwitchDTO>(
+        `/v1/videos/${encodeURIComponent(videoId)}/side-switches`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    sideSwitchesDelete: (id: string) =>
+      request<{ ok: true }>(`/v1/side-switches/${encodeURIComponent(id)}`, {
         method: "DELETE",
       }),
     videosShotEventsList: (videoId: string) =>

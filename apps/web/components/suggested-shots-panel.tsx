@@ -8,6 +8,8 @@ import { useAuthedApiClient } from "@/lib/api/use-authed-api-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { SuggestedShotEventDTO, SuggestedShotRegenerateSummaryDTO, VideoDTO } from "@pickleball/shared";
+import type { VideoPlayerSlot } from "@pickleball/shared/constants";
+import type { ConvertSuggestedShotBody } from "@pickleball/shared/zod";
 
 function formatClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -35,6 +37,8 @@ export function SuggestedShotsPanel({
   seekTo,
   onFocusChange,
   disableShortcuts = false,
+  activeRallyId = null,
+  playerSlot = null,
 }: {
   videoId: string;
   processingStatus: VideoDTO["processingStatus"];
@@ -42,6 +46,8 @@ export function SuggestedShotsPanel({
   onFocusChange?: (suggestion: SuggestedShotEventDTO | null) => void;
   /** When true (e.g. review queue active), list shortcuts are disabled. */
   disableShortcuts?: boolean;
+  activeRallyId?: string | null;
+  playerSlot?: VideoPlayerSlot | null;
 }) {
   const client = useAuthedApiClient();
   const qc = useQueryClient();
@@ -107,14 +113,30 @@ export function SuggestedShotsPanel({
     onSuccess: invalidate,
   });
 
+  const convertBody = useCallback(
+    (sug?: SuggestedShotEventDTO): ConvertSuggestedShotBody => ({
+      rallyId: activeRallyId ?? undefined,
+      playerSlot: playerSlot ?? undefined,
+      endsRally: sug?.debugMetadata?.endOfRallyLikely ?? undefined,
+    }),
+    [activeRallyId, playerSlot],
+  );
+
   const convertMut = useMutation({
-    mutationFn: (id: string) => client.videosSuggestedShotEventConvert(videoId, id, {}),
+    mutationFn: (id: string) => {
+      const sug = (pendingQ.data ?? []).find((s) => s.id === id);
+      return client.videosSuggestedShotEventConvert(videoId, id, convertBody(sug));
+    },
     onSuccess: invalidate,
   });
 
   const batchMut = useMutation({
     mutationFn: () =>
-      client.videosSuggestedShotEventsConvertBatch(videoId, { minConfidence: confidenceThreshold }),
+      client.videosSuggestedShotEventsConvertBatch(videoId, {
+        minConfidence: confidenceThreshold,
+        rallyId: activeRallyId ?? undefined,
+        playerSlot: playerSlot ?? undefined,
+      }),
     onSuccess: invalidate,
   });
 

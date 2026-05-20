@@ -5,3 +5,6 @@ export * from "./youtube.js";
 export * from "./stats/video-shot-stats.js";
 export * from "./stats/rally-consistency.js";
 export * from "./stats/coaching-feedback.js";
+export * from "./stats/mistake-outcomes.js";
+export * from "./stats/solo-analysis.js";
+export * from "./stats/side-switch-segments.js";

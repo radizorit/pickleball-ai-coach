@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { SuggestedShotEventDTO } from "@pickleball/shared";
 import type { ConvertSuggestedShotBody } from "@pickleball/shared/zod";
-import type { ShotOutcome, ShotSide, ShotType } from "@pickleball/shared/constants";
+import type { ShotOutcome, ShotSide, ShotType, VideoPlayerSlot } from "@pickleball/shared/constants";
 
 function formatClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -56,12 +56,16 @@ export function SuggestionReviewQueue({
   seekTo,
   onQueueActiveChange,
   onCurrentSuggestionChange,
+  activeRallyId = null,
+  focusPlayerSlot = "player_1",
 }: {
   videoId: string;
   isYoutube: boolean;
   seekTo: (seconds: number) => void;
   onQueueActiveChange?: (active: boolean) => void;
   onCurrentSuggestionChange?: (suggestion: SuggestedShotEventDTO | null) => void;
+  activeRallyId?: string | null;
+  focusPlayerSlot?: VideoPlayerSlot;
 }) {
   const client = useAuthedApiClient();
   const qc = useQueryClient();
@@ -155,9 +159,12 @@ export function SuggestionReviewQueue({
       shotType: selectedPreset.shotType,
       side: selectedPreset.side,
       outcome: selectedPreset.outcome,
+      rallyId: activeRallyId ?? undefined,
+      playerSlot: focusPlayerSlot,
+      endsRally: current.debugMetadata?.endOfRallyLikely ?? undefined,
     };
     convertMut.mutate({ id: current.id, body });
-  }, [current, busy, convertMut, selectedPreset]);
+  }, [current, busy, convertMut, selectedPreset, selectedPresetId, activeRallyId, focusPlayerSlot]);
 
   const startQueue = useCallback(() => {
     setSessionTotal(pending.length);

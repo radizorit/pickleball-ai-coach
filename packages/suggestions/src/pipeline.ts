@@ -3,8 +3,10 @@ import { suggestedShotEvents } from "@pickleball/db/schema";
 import type { DB } from "@pickleball/db";
 import type { SuggestedShotDebugMetadata } from "@pickleball/db/schema";
 
+import type { CourtCornersNormalized } from "./config.js";
 import { loadSuggestionHeuristicConfig, type SuggestionHeuristicConfig, type SuggestionMediaEnv } from "./config.js";
 import { fuseSignalHits } from "./fuse.js";
+import { runSuggestionPipelineV3 } from "./pipeline-v3.js";
 import { detectAudioHits } from "./signals/audio.js";
 import { detectMotionHits, detectSceneHits } from "./signals/scene.js";
 import type { SignalHit } from "./types.js";
@@ -20,6 +22,7 @@ export type SuggestionPipelineResult = {
     afterConfidenceCount: number;
     afterMaxGapCount: number;
     outputCount: number;
+    proposedRallyCount?: number;
   };
 };
 
@@ -47,8 +50,7 @@ function logConfigSnapshot(videoId: string, config: SuggestionHeuristicConfig): 
 }
 
 /**
- * Multi-signal heuristic pipeline: scene + audio peaks + motion spikes → fused confidence.
- * Deletes pending heuristic rows (`heuristic_v1` / `heuristic_v2`) before insert (idempotent retries).
+ * Heuristic suggestion pipeline. Default: visual rally v3; set `SUGGESTION_PIPELINE_VERSION=v2` for legacy fuse.
  */
 export async function runSuggestionPipeline(params: {
   db: DB;
@@ -56,18 +58,36 @@ export async function runSuggestionPipeline(params: {
   videoId: string;
   inputPath: string;
   durationSeconds: number | null;
+  courtCorners?: CourtCornersNormalized | null;
 }): Promise<SuggestionPipelineResult> {
-  const { db, env, videoId, inputPath, durationSeconds } = params;
+  const { db, env, videoId, inputPath, durationSeconds, courtCorners } = params;
   const config = loadSuggestionHeuristicConfig(env);
+
+  if (config.pipelineVersion === "v3") {
+    return runSuggestionPipelineV3({
+      db,
+      env,
+      videoId,
+      inputPath,
+      durationSeconds,
+      config,
+      courtCorners,
+    });
+  }
+
   const generatedAt = new Date().toISOString();
 
   if (shouldLogPipelineDebug()) {
     logConfigSnapshot(videoId, config);
   }
 
+  const audioPromise = config.enableAudio
+    ? detectAudioHits(env.FFMPEG_BIN, inputPath, config.audioPeakDbThreshold)
+    : Promise.resolve([] as Awaited<ReturnType<typeof detectAudioHits>>);
+
   const [sceneHits, audioHits, motionHits] = await Promise.all([
     detectSceneHits(env.FFMPEG_BIN, inputPath, config.sceneThreshold, config.sceneSampleFps),
-    detectAudioHits(env.FFMPEG_BIN, inputPath, config.audioPeakDbThreshold),
+    audioPromise,
     detectMotionHits(env.FFMPEG_BIN, inputPath, config.motionThreshold, config.sceneSampleFps),
   ]);
 

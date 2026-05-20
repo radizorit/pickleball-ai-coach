@@ -5,7 +5,7 @@
   "description": "Pickleball AI Coach \u2014 video analytics SaaS (monorepo root)",
   "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=20.17.0",
+    "node": ">=22.14.0",
     "pnpm": ">=9.0.0"
   },
   "scripts": {
@@ -30,7 +30,7 @@
     "dev:worker": "pnpm --filter @pickleball/worker dev"
   },
   "devDependencies": {
-    "@types/node": "^20.14.10",
+    "@types/node": "^22.14.10",
     "husky": "^9.1.7",
     "lint-staged": "^15.2.10",
     "prettier": "^3.4.2",

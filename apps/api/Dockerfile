@@ -7,7 +7,7 @@
 # Build from the monorepo root:
 #   docker build -f apps/api/Dockerfile -t pickleball-api .
 
-ARG NODE_VERSION=20.17.0
+ARG NODE_VERSION=22.14.0
 
 FROM node:${NODE_VERSION}-alpine AS base
 ENV PNPM_HOME=/pnpm

@@ -1,17 +1,12 @@
 import { SHOT_OUTCOMES, SHOT_TYPES } from "../constants/index.js";
 import type { ShotOutcome, ShotType } from "../constants/index.js";
 import type { ShotEventDTO } from "../types/index.js";
+import { isMistakeOutcome, MISTAKE_OUTCOMES, type MistakeOutcome } from "./mistake-outcomes.js";
 
-/** Outcomes we treat as “mistakes” for headline stats (not `in`, `winner`, or `unknown`). */
-const MISTAKE_OUTCOMES = ["out", "net", "forced_error", "unforced_error"] as const satisfies readonly ShotOutcome[];
-type MistakeOutcome = (typeof MISTAKE_OUTCOMES)[number];
+export { isMistakeOutcome, MISTAKE_OUTCOMES, type MistakeOutcome } from "./mistake-outcomes.js";
 
 /** “Good” tags for simple success share on a shot type (rally still in or outright winner). */
 const POSITIVE_OUTCOMES = ["in", "winner"] as const satisfies readonly ShotOutcome[];
-
-function isMistakeOutcome(o: ShotOutcome): o is MistakeOutcome {
-  return (MISTAKE_OUTCOMES as readonly string[]).includes(o);
-}
 
 function isPositiveOutcome(o: ShotOutcome): boolean {
   return (POSITIVE_OUTCOMES as readonly string[]).includes(o);

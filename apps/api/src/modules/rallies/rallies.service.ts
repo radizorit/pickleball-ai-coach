@@ -1,14 +1,17 @@
 import type {
   RallyConsistencyStatsDTO,
+  SuggestedRallyDTO,
   VideoPlayerDTO,
   VideoRallyDTO,
 } from "@pickleball/shared";
 import { computeRallyConsistencyStats, DEFAULT_VIDEO_PLAYER_SLOTS } from "@pickleball/shared";
 import type { CreateRallyBody, UpdateRallyBody, UpsertVideoPlayersBody } from "@pickleball/shared/zod";
 import { and, asc, eq, getDb, isNull, sql } from "@pickleball/db";
-import { rallies, shotEvents, videoPlayers, videos } from "@pickleball/db/schema";
+import { rallies, shotEvents, suggestedRallies, videoPlayers, videos } from "@pickleball/db/schema";
+import type { SuggestedRallyRow } from "@pickleball/db/schema";
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -19,6 +22,22 @@ import type { AuthContext } from "../../auth/auth.types.js";
 import { UsersService } from "../users/users.service.js";
 import { shotEventToDto } from "../shot-events/shot-event-mapper.js";
 import { videoPlayerToDto, videoRallyToDto } from "./rallies.mapper.js";
+
+function suggestedRallyToDto(row: SuggestedRallyRow): SuggestedRallyDTO {
+  const toIso = (value: Date | string) =>
+    value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+  return {
+    id: row.id,
+    videoId: row.videoId,
+    proposalIndex: row.proposalIndex,
+    startTimeSeconds: row.startTimeSeconds,
+    endTimeSeconds: row.endTimeSeconds,
+    confidence: row.confidence,
+    status: row.status,
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+  };
+}
 
 @Injectable()
 export class RalliesService {
@@ -41,6 +60,7 @@ export class RalliesService {
     await this.assertVideoOwned(auth, videoId);
     const db = getDb();
     await this.ensureDefaultPlayers(db, videoId);
+    await this.backfillSoloDisplayNames(db, videoId);
     const rows = await db
       .select()
       .from(videoPlayers)
@@ -71,6 +91,11 @@ export class RalliesService {
     return this.listPlayers(auth, videoId);
   }
 
+  private soloDefaultName(slot: (typeof DEFAULT_VIDEO_PLAYER_SLOTS)[number]): string | null {
+    if (slot === "player_1") return "Me";
+    return null;
+  }
+
   private async ensureDefaultPlayers(db: ReturnType<typeof getDb>, videoId: string): Promise<void> {
     const existing = await db
       .select({ slot: videoPlayers.slot })
@@ -79,9 +104,30 @@ export class RalliesService {
     const have = new Set(existing.map((r) => r.slot));
     for (const slot of DEFAULT_VIDEO_PLAYER_SLOTS) {
       if (!have.has(slot)) {
-        await db.insert(videoPlayers).values({ videoId, slot });
+        await db.insert(videoPlayers).values({
+          videoId,
+          slot,
+          displayName: this.soloDefaultName(slot),
+        });
       }
     }
+  }
+
+  /** One-time fill: default display name for Me (player_1) only. */
+  private async backfillSoloDisplayNames(
+    db: ReturnType<typeof getDb>,
+    videoId: string,
+  ): Promise<void> {
+    const [row] = await db
+      .select()
+      .from(videoPlayers)
+      .where(and(eq(videoPlayers.videoId, videoId), eq(videoPlayers.slot, "player_1")))
+      .limit(1);
+    if (!row || row.displayName?.trim()) return;
+    await db
+      .update(videoPlayers)
+      .set({ displayName: "Me", updatedAt: sql`now()` })
+      .where(and(eq(videoPlayers.videoId, videoId), eq(videoPlayers.slot, "player_1")));
   }
 
   async listRallies(auth: AuthContext, videoId: string): Promise<VideoRallyDTO[]> {
@@ -216,6 +262,104 @@ export class RalliesService {
         .where(eq(shotEvents.rallyId, rallyId));
       await tx.delete(rallies).where(eq(rallies.id, rallyId));
     });
+  }
+
+  async listSuggestedRallies(auth: AuthContext, videoId: string): Promise<SuggestedRallyDTO[]> {
+    await this.assertVideoOwned(auth, videoId);
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(suggestedRallies)
+      .where(eq(suggestedRallies.videoId, videoId))
+      .orderBy(asc(suggestedRallies.startTimeSeconds), asc(suggestedRallies.proposalIndex));
+    return rows.map(suggestedRallyToDto);
+  }
+
+  async acceptSuggestedRally(
+    auth: AuthContext,
+    videoId: string,
+    suggestedRallyId: string,
+  ): Promise<{ rally: VideoRallyDTO; suggestion: SuggestedRallyDTO }> {
+    await this.assertVideoOwned(auth, videoId);
+    const db = getDb();
+    const [proposal] = await db
+      .select()
+      .from(suggestedRallies)
+      .where(
+        and(eq(suggestedRallies.id, suggestedRallyId), eq(suggestedRallies.videoId, videoId)),
+      )
+      .limit(1);
+    if (!proposal) {
+      throw new NotFoundException("Suggested rally not found");
+    }
+    if (proposal.status !== "suggested") {
+      throw new BadRequestException("This rally proposal has already been used or dismissed");
+    }
+
+    return db.transaction(async (tx) => {
+      const [rallyRow] = await tx
+        .insert(rallies)
+        .values({
+          videoId,
+          startTimeSeconds: proposal.startTimeSeconds,
+          endTimeSeconds: proposal.endTimeSeconds,
+        })
+        .returning();
+      if (!rallyRow) {
+        throw new BadRequestException("Could not create rally");
+      }
+
+      const [sugUpdated] = await tx
+        .update(suggestedRallies)
+        .set({ status: "accepted", updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(suggestedRallies.id, suggestedRallyId),
+            eq(suggestedRallies.status, "suggested"),
+          ),
+        )
+        .returning();
+      if (!sugUpdated) {
+        throw new ConflictException("Rally proposal was updated by another request");
+      }
+
+      return {
+        rally: videoRallyToDto(rallyRow, 0),
+        suggestion: suggestedRallyToDto(sugUpdated),
+      };
+    });
+  }
+
+  async rejectSuggestedRally(
+    auth: AuthContext,
+    videoId: string,
+    suggestedRallyId: string,
+  ): Promise<SuggestedRallyDTO> {
+    await this.assertVideoOwned(auth, videoId);
+    const db = getDb();
+    const [proposal] = await db
+      .select()
+      .from(suggestedRallies)
+      .where(
+        and(eq(suggestedRallies.id, suggestedRallyId), eq(suggestedRallies.videoId, videoId)),
+      )
+      .limit(1);
+    if (!proposal) {
+      throw new NotFoundException("Suggested rally not found");
+    }
+    if (proposal.status !== "suggested") {
+      throw new BadRequestException("Only pending rally proposals can be rejected");
+    }
+
+    const [updated] = await db
+      .update(suggestedRallies)
+      .set({ status: "rejected", updatedAt: sql`now()` })
+      .where(eq(suggestedRallies.id, suggestedRallyId))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException("Suggested rally not found");
+    }
+    return suggestedRallyToDto(updated);
   }
 
   async consistencyForVideo(

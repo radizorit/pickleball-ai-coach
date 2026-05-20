@@ -44,3 +44,5 @@ export const courtZoneEnum = pgEnum("court_zone", COURT_ZONES);
 export const shotEventSourceEnum = pgEnum("shot_event_source", SHOT_EVENT_SOURCES);
 export const suggestedShotSourceEnum = pgEnum("suggested_shot_source", SUGGESTED_SHOT_SOURCES);
 export const suggestedShotStatusEnum = pgEnum("suggested_shot_status", SUGGESTED_SHOT_STATUSES);
+/** Same lifecycle as suggested shots: suggested → accepted | rejected */
+export const suggestedRallyStatusEnum = pgEnum("suggested_rally_status", SUGGESTED_SHOT_STATUSES);

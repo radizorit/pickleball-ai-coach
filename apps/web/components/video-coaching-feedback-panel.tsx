@@ -3,7 +3,8 @@
 import { useMemo } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { RallyConsistencyStatsDTO, ShotEventDTO } from "@pickleball/shared";
+import type { RallyConsistencyStatsDTO, ShotEventDTO, VideoPlayerDTO } from "@pickleball/shared";
+import type { VideoPlayerSlot } from "@pickleball/shared/constants";
 import {
   COACHING_MIN_TAGS_FOR_FULL_FEEDBACK,
   computeCoachingFeedback,
@@ -13,15 +14,29 @@ export function VideoCoachingFeedbackPanel({
   events,
   isLoading,
   rallyStats,
+  focusPlayerSlot,
+  players,
 }: {
   events: ShotEventDTO[] | undefined;
   isLoading: boolean;
   rallyStats?: RallyConsistencyStatsDTO;
+  focusPlayerSlot?: VideoPlayerSlot;
+  players?: VideoPlayerDTO[];
 }) {
   const report = useMemo(
-    () => computeCoachingFeedback(events ?? [], { rallyStats }),
-    [events, rallyStats],
+    () =>
+      computeCoachingFeedback(events ?? [], {
+        rallyStats,
+        focusPlayerSlot,
+      }),
+    [events, rallyStats, focusPlayerSlot],
   );
+
+  const meName =
+    focusPlayerSlot != null
+      ? players?.find((p) => p.slot === focusPlayerSlot)?.displayName?.trim() ||
+        (focusPlayerSlot === "player_1" ? "Me" : "P2")
+      : null;
 
   if (isLoading) {
     return (
@@ -42,7 +57,11 @@ export function VideoCoachingFeedbackPanel({
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Coaching feedback</CardTitle>
         <CardDescription>
-          Rule-based preview from your tags (not AI).{" "}
+          {meName ? (
+            <>Coaching for {meName} (your shots) — rule-based, not AI. </>
+          ) : (
+            <>Rule-based preview from your tags (not AI). </>
+          )}
           {report.lowSample ? (
             <span className="text-amber-600 dark:text-amber-500">
               Fewer than {COACHING_MIN_TAGS_FOR_FULL_FEEDBACK} tags — add more for stronger guidance.

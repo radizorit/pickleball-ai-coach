@@ -3,9 +3,11 @@ import { ApiProperty } from "@nestjs/swagger";
 import { RALLY_END_REASONS, VIDEO_PLAYER_SLOTS } from "@pickleball/shared/constants";
 import type {
   RallyConsistencyStatsDTO,
+  SuggestedRallyDTO,
   VideoPlayerDTO,
   VideoRallyDTO,
 } from "@pickleball/shared";
+import { SUGGESTED_SHOT_STATUSES } from "@pickleball/shared/constants";
 
 export class VideoPlayerResponseDto implements VideoPlayerDTO {
   @ApiProperty({ type: String, format: "uuid" })
@@ -60,6 +62,43 @@ class PlayerSlotCountMapSchema {
 
   @ApiProperty({ type: Number })
   player_4!: number;
+}
+
+export class SuggestedRallyResponseDto implements SuggestedRallyDTO {
+  @ApiProperty({ type: String, format: "uuid" })
+  id!: string;
+
+  @ApiProperty({ type: String, format: "uuid" })
+  videoId!: string;
+
+  @ApiProperty({ type: Number })
+  proposalIndex!: number;
+
+  @ApiProperty({ type: Number })
+  startTimeSeconds!: number;
+
+  @ApiProperty({ type: Number })
+  endTimeSeconds!: number;
+
+  @ApiProperty({ type: Number })
+  confidence!: number;
+
+  @ApiProperty({ enum: SUGGESTED_SHOT_STATUSES })
+  status!: SuggestedRallyDTO["status"];
+
+  @ApiProperty({ type: String, format: "date-time" })
+  createdAt!: string;
+
+  @ApiProperty({ type: String, format: "date-time" })
+  updatedAt!: string;
+}
+
+export class AcceptSuggestedRallyResponseDto {
+  @ApiProperty({ type: () => VideoRallyResponseDto })
+  rally!: VideoRallyDTO;
+
+  @ApiProperty({ type: () => SuggestedRallyResponseDto })
+  suggestion!: SuggestedRallyDTO;
 }
 
 export class RallyConsistencyStatsResponseDto implements RallyConsistencyStatsDTO {

@@ -16,6 +16,7 @@ import {
   assertRallyBelongsToVideo,
   nextShotIndexInRally,
   recomputeShotIndicesInRally,
+  syncRallyEndFromShots,
 } from "../rallies/rally-shot-helpers.js";
 import { UsersService } from "../users/users.service.js";
 import { shotEventToDto } from "./shot-event-mapper.js";
@@ -105,6 +106,75 @@ export class ShotEventsService {
     });
   }
 
+  /** Create a confirmed shot from a heuristic suggestion (marks suggestion accepted). */
+  async createFromSuggestion(
+    auth: AuthContext,
+    videoId: string,
+    params: {
+      suggestionId: string;
+      timestampSeconds: number;
+      shotType: CreateShotEventBody["shotType"];
+      side: CreateShotEventBody["side"];
+      outcome: CreateShotEventBody["outcome"];
+      note: string | null;
+      rallyId?: string | null;
+      playerSlot?: CreateShotEventBody["playerSlot"];
+      endsRally?: boolean;
+    },
+  ): Promise<ShotEventDTO> {
+    await this.assertVideoOwned(auth, videoId);
+    const userId = await this.users.resolveDbUserId(auth);
+    const db = getDb();
+
+    return db.transaction(async (tx) => {
+      const rallyId = params.rallyId ?? null;
+      let shotIndexInRally: number | null = null;
+      let endsRally = params.endsRally ?? false;
+
+      if (rallyId) {
+        const rally = await assertRallyBelongsToVideo(tx, rallyId, videoId);
+        if (rally.endTimeSeconds != null && !endsRally) {
+          throw new BadRequestException("Rally is already closed; mark endsRally or open a new rally");
+        }
+        shotIndexInRally = await nextShotIndexInRally(tx, rallyId);
+      } else {
+        endsRally = false;
+      }
+
+      const [row] = await tx
+        .insert(shotEvents)
+        .values({
+          videoId,
+          rallyId,
+          playerSlot: params.playerSlot ?? null,
+          shotIndexInRally,
+          endsRally,
+          timestampSeconds: params.timestampSeconds,
+          shotType: params.shotType,
+          side: params.side,
+          outcome: params.outcome,
+          note: params.note,
+          source: "manual",
+          suggestedShotEventId: params.suggestionId,
+          createdByUserId: userId,
+        })
+        .returning();
+      if (!row) {
+        throw new BadRequestException("Could not create shot event");
+      }
+
+      if (rallyId && endsRally) {
+        const rally = await assertRallyBelongsToVideo(tx, rallyId, videoId);
+        await applyEndsRallyToShot(tx, rally, row);
+      } else if (rallyId) {
+        await recomputeShotIndicesInRally(tx, rallyId);
+      }
+
+      const [final] = await tx.select().from(shotEvents).where(eq(shotEvents.id, row.id)).limit(1);
+      return shotEventToDto(final ?? row);
+    });
+  }
+
   async updateEvent(
     auth: AuthContext,
     eventId: string,
@@ -173,6 +243,14 @@ export class ShotEventsService {
         if (newEndsRally) {
           const rally = await assertRallyBelongsToVideo(tx, rallyId, videoId);
           await applyEndsRallyToShot(tx, rally, shotRow);
+        } else if (prev.endsRally && !newEndsRally) {
+          await tx
+            .update(shotEvents)
+            .set({ endsRally: false, updatedAt: sql`now()` })
+            .where(eq(shotEvents.id, eventId));
+          await syncRallyEndFromShots(tx, rallyId);
+        } else if (prev.endsRally && prev.rallyId && prev.rallyId !== rallyId) {
+          await syncRallyEndFromShots(tx, prev.rallyId);
         }
         const [final] = await tx.select().from(shotEvents).where(eq(shotEvents.id, eventId)).limit(1);
         return shotEventToDto(final ?? shotRow);
@@ -183,6 +261,7 @@ export class ShotEventsService {
           .update(shotEvents)
           .set({ endsRally: false, updatedAt: sql`now()` })
           .where(eq(shotEvents.id, eventId));
+        await syncRallyEndFromShots(tx, prev.rallyId);
       }
 
       return shotEventToDto(updated);
@@ -196,6 +275,7 @@ export class ShotEventsService {
       .select({
         id: shotEvents.id,
         rallyId: shotEvents.rallyId,
+        endsRally: shotEvents.endsRally,
         ownerId: videos.userId,
       })
       .from(shotEvents)
@@ -210,9 +290,14 @@ export class ShotEventsService {
     }
 
     const rallyId = existing.rallyId;
+    const wasEnding = existing.endsRally;
+
     await db.delete(shotEvents).where(eq(shotEvents.id, eventId));
     if (rallyId) {
       await recomputeShotIndicesInRally(db, rallyId);
+      if (wasEnding) {
+        await syncRallyEndFromShots(db, rallyId);
+      }
     }
   }
 }

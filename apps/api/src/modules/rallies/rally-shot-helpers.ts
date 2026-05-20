@@ -95,3 +95,28 @@ export async function applyEndsRallyToShot(
     .set({ endsRally: true, updatedAt: sql`now()` })
     .where(eq(shotEvents.id, shot.id));
 }
+
+/** Reopen a rally after the ending shot is cleared or removed. */
+export async function reopenRally(db: DB, rallyId: string): Promise<void> {
+  await db
+    .update(rallies)
+    .set({
+      endTimeSeconds: null,
+      endReason: null,
+      winningPlayerSlot: null,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(rallies.id, rallyId));
+}
+
+/** If no shot still ends the rally, clear rally end metadata. */
+export async function syncRallyEndFromShots(db: DB, rallyId: string): Promise<void> {
+  const [ending] = await db
+    .select({ id: shotEvents.id })
+    .from(shotEvents)
+    .where(and(eq(shotEvents.rallyId, rallyId), eq(shotEvents.endsRally, true)))
+    .limit(1);
+  if (!ending) {
+    await reopenRally(db, rallyId);
+  }
+}

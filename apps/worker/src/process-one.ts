@@ -75,6 +75,7 @@ export async function processVideoJob(params: {
         videoId: video.id,
         inputPath,
         durationSeconds: meta.durationSeconds,
+        courtCorners: video.courtCorners ?? null,
       });
     } catch (err) {
       console.error(`[worker] heuristic suggestions skipped for ${video.id}:`, err);

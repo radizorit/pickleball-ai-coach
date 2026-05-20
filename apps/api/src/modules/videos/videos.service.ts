@@ -1,9 +1,19 @@
 import type { Video } from "@pickleball/db/schema";
-import { and, desc, eq, getDb, isNull, sql } from "@pickleball/db";
-import type { VideoDTO, VideoPresignedReadDTO, VideoPresignedUploadDTO } from "@pickleball/shared";
+import { and, desc, eq, getDb, inArray, isNull, sql } from "@pickleball/db";
+import type {
+  VideoDTO,
+  VideoPresignedReadDTO,
+  VideoPresignedUploadDTO,
+  VideoResetLabelsSummaryDTO,
+} from "@pickleball/shared";
 import type { AcceptedVideoMimeType, VideoReadAsset } from "@pickleball/shared/constants";
 import { DEFAULT_MAX_VIDEO_UPLOAD_BYTES } from "@pickleball/shared/constants";
-import type { CreateVideoBody, PresignVideoUploadBody } from "@pickleball/shared/zod";
+import type {
+  CreateVideoBody,
+  PatchVideoBody,
+  PresignVideoUploadBody,
+  UpsertCourtCornersBody,
+} from "@pickleball/shared/zod";
 import {
   BadRequestException,
   ConflictException,
@@ -12,7 +22,14 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { videos } from "@pickleball/db/schema";
+import {
+  rallies,
+  shotEvents,
+  suggestedRallies,
+  suggestedShotEvents,
+  videoSideSwitches,
+  videos,
+} from "@pickleball/db/schema";
 
 import type { AuthContext } from "../../auth/auth.types.js";
 import { loadEnv } from "../../env.js";
@@ -67,6 +84,8 @@ function toVideoDTO(row: Video): VideoDTO {
     failureMessage: row.failureMessage ?? null,
     privacy: row.privacy,
     matchType: row.matchType ?? null,
+    courtCorners: row.courtCorners ?? null,
+    focusPlayerSlot: row.focusPlayerSlot ?? "player_1",
     recordedAt: row.recordedAt ? toIso(row.recordedAt) : null,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
@@ -359,5 +378,114 @@ export class VideosService {
       responseContentType,
     });
     return { url: signed.url, expiresAt: signed.expiresAt };
+  }
+
+  async patchVideo(auth: AuthContext, videoId: string, body: PatchVideoBody): Promise<VideoDTO> {
+    const userId = await this.users.resolveDbUserId(auth);
+    const db = getDb();
+    if (body.focusPlayerSlot === undefined) {
+      return this.getForUser(auth, videoId);
+    }
+    const [updated] = await db
+      .update(videos)
+      .set({ focusPlayerSlot: body.focusPlayerSlot, updatedAt: sql`now()` })
+      .where(and(eq(videos.id, videoId), eq(videos.userId, userId), isNull(videos.deletedAt)))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException("Video not found");
+    }
+    return toVideoDTO(updated);
+  }
+
+  async upsertCourtCorners(
+    auth: AuthContext,
+    videoId: string,
+    body: UpsertCourtCornersBody,
+  ): Promise<VideoDTO> {
+    const userId = await this.users.resolveDbUserId(auth);
+    const db = getDb();
+    const [updated] = await db
+      .update(videos)
+      .set({ courtCorners: body.courtCorners, updatedAt: sql`now()` })
+      .where(and(eq(videos.id, videoId), eq(videos.userId, userId), isNull(videos.deletedAt)))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException("Video not found");
+    }
+    return toVideoDTO(updated);
+  }
+
+  /**
+   * Clear manual labels for a fresh gold session: shots, rallies, side switches.
+   * Optionally reset accepted/rejected suggestions back to `suggested`.
+   */
+  async resetLabelsForVideo(
+    auth: AuthContext,
+    videoId: string,
+    options?: { resetSuggestions?: boolean },
+  ): Promise<VideoResetLabelsSummaryDTO> {
+    const userId = await this.users.resolveDbUserId(auth);
+    const db = getDb();
+    const resetSuggestions = options?.resetSuggestions !== false;
+
+    const [video] = await db
+      .select({ id: videos.id })
+      .from(videos)
+      .where(and(eq(videos.id, videoId), eq(videos.userId, userId), isNull(videos.deletedAt)))
+      .limit(1);
+    if (!video) {
+      throw new NotFoundException("Video not found");
+    }
+
+    return db.transaction(async (tx) => {
+      const deletedShots = await tx
+        .delete(shotEvents)
+        .where(eq(shotEvents.videoId, videoId))
+        .returning({ id: shotEvents.id });
+      const deletedRallies = await tx
+        .delete(rallies)
+        .where(eq(rallies.videoId, videoId))
+        .returning({ id: rallies.id });
+      const deletedSideSwitches = await tx
+        .delete(videoSideSwitches)
+        .where(eq(videoSideSwitches.videoId, videoId))
+        .returning({ id: videoSideSwitches.id });
+
+      let resetShotSuggestions = 0;
+      let resetRallySuggestions = 0;
+      if (resetSuggestions) {
+        const shotSug = await tx
+          .update(suggestedShotEvents)
+          .set({ status: "suggested", updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(suggestedShotEvents.videoId, videoId),
+              inArray(suggestedShotEvents.status, ["accepted", "rejected"]),
+            ),
+          )
+          .returning({ id: suggestedShotEvents.id });
+        resetShotSuggestions = shotSug.length;
+
+        const rallySug = await tx
+          .update(suggestedRallies)
+          .set({ status: "suggested", updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(suggestedRallies.videoId, videoId),
+              inArray(suggestedRallies.status, ["accepted", "rejected"]),
+            ),
+          )
+          .returning({ id: suggestedRallies.id });
+        resetRallySuggestions = rallySug.length;
+      }
+
+      return {
+        deletedShots: deletedShots.length,
+        deletedRallies: deletedRallies.length,
+        deletedSideSwitches: deletedSideSwitches.length,
+        resetShotSuggestions,
+        resetRallySuggestions,
+      };
+    });
   }
 }

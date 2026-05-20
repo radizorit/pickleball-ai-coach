@@ -57,6 +57,27 @@
       "when": 1739836800010,
       "tag": "0008_video_players_rallies",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1739836800011,
+      "tag": "0009_visual_rally_v3",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1739836800012,
+      "tag": "0010_video_focus_player",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1739836800013,
+      "tag": "0011_video_side_switches",
+      "breakpoints": true
     }
   ]
 }

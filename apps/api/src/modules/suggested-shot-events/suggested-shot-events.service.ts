@@ -12,7 +12,14 @@ import type {
 import type { ConvertSuggestedShotBody, ConvertSuggestedShotBatchBody } from "@pickleball/shared/zod";
 import { runSuggestionPipeline } from "@pickleball/suggestions";
 import { and, asc, eq, getDb, isNull, sql } from "@pickleball/db";
-import { shotEvents, suggestedShotEvents, videos } from "@pickleball/db/schema";
+import {
+  rallies,
+  shotEvents,
+  suggestedRallies,
+  suggestedShotEvents,
+  videoSideSwitches,
+  videos,
+} from "@pickleball/db/schema";
 import type { SuggestedShotEventRow } from "@pickleball/db/schema";
 import {
   BadRequestException,
@@ -28,7 +35,7 @@ import type { AuthContext } from "../../auth/auth.types.js";
 import { loadEnv } from "../../env.js";
 import { createS3ClientFromApiEnv, downloadObjectToFile, isS3Configured } from "../../storage/s3-client.js";
 import { UsersService } from "../users/users.service.js";
-import { shotEventToDto } from "../shot-events/shot-event-mapper.js";
+import { ShotEventsService } from "../shot-events/shot-events.service.js";
 
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -55,7 +62,10 @@ export type SuggestedShotListFilter = "suggested" | "accepted" | "rejected" | "a
 
 @Injectable()
 export class SuggestedShotEventsService {
-  constructor(@Inject(UsersService) private readonly users: UsersService) {}
+  constructor(
+    @Inject(UsersService) private readonly users: UsersService,
+    @Inject(ShotEventsService) private readonly shotEvents: ShotEventsService,
+  ) {}
 
   private async assertVideoOwned(auth: AuthContext, videoId: string): Promise<void> {
     const userId = await this.users.resolveDbUserId(auth);
@@ -153,11 +163,83 @@ export class SuggestedShotEventsService {
         confirmedSide: shot?.side ?? null,
         confirmedOutcome: shot?.outcome ?? null,
         pipelineVersion: s.debugMetadata?.pipelineVersion ?? s.source,
+        debugKind: s.debugMetadata?.kind ?? null,
+        proposedRallyIndex: s.debugMetadata?.proposedRallyIndex ?? null,
+        endOfRallyLikely: s.debugMetadata?.endOfRallyLikely ?? null,
       };
     });
 
+    const allShots = await db
+      .select()
+      .from(shotEvents)
+      .where(eq(shotEvents.videoId, videoId))
+      .orderBy(asc(shotEvents.timestampSeconds));
+
+    const rallyRows = await db
+      .select()
+      .from(rallies)
+      .where(eq(rallies.videoId, videoId))
+      .orderBy(asc(rallies.startTimeSeconds));
+
+    const rallyExport = rallyRows.map((r) => ({
+      rallyId: r.id,
+      startTimeSeconds: r.startTimeSeconds,
+      endTimeSeconds: r.endTimeSeconds,
+      winningPlayerSlot: r.winningPlayerSlot,
+      endReason: r.endReason,
+      shotCount: allShots.filter((s) => s.rallyId === r.id).length,
+    }));
+
+    const sugRallyRows = await db
+      .select()
+      .from(suggestedRallies)
+      .where(eq(suggestedRallies.videoId, videoId))
+      .orderBy(asc(suggestedRallies.startTimeSeconds));
+
+    const acceptedRallyByStart = new Map(
+      rallyRows.map((r) => [`${r.startTimeSeconds.toFixed(2)}`, r.id]),
+    );
+
+    const suggestedRallyExport = sugRallyRows.map((sr) => ({
+      suggestedRallyId: sr.id,
+      proposalIndex: sr.proposalIndex,
+      startTimeSeconds: sr.startTimeSeconds,
+      endTimeSeconds: sr.endTimeSeconds,
+      confidence: sr.confidence,
+      status: sr.status,
+      acceptedRallyId:
+        sr.status === "accepted"
+          ? (acceptedRallyByStart.get(`${sr.startTimeSeconds.toFixed(2)}`) ?? null)
+          : null,
+    }));
+
+    const shotExport = allShots.map((shot) => ({
+      shotEventId: shot.id,
+      timestampSeconds: shot.timestampSeconds,
+      rallyId: shot.rallyId,
+      playerSlot: shot.playerSlot,
+      shotIndexInRally: shot.shotIndexInRally,
+      endsRally: shot.endsRally,
+      shotType: shot.shotType,
+      side: shot.side,
+      outcome: shot.outcome,
+    }));
+
+    const sideSwitchRows = await db
+      .select()
+      .from(videoSideSwitches)
+      .where(eq(videoSideSwitches.videoId, videoId))
+      .orderBy(asc(videoSideSwitches.timestampSeconds), asc(videoSideSwitches.createdAt));
+
+    const sideSwitchExport = sideSwitchRows.map((sw) => ({
+      id: sw.id,
+      timestampSeconds: sw.timestampSeconds,
+      note: sw.note,
+      segmentIndex: sw.segmentIndex,
+    }));
+
     return {
-      schemaVersion: "1",
+      schemaVersion: "3",
       exportedAt: new Date().toISOString(),
       video: {
         videoId: video.id,
@@ -173,6 +255,10 @@ export class SuggestedShotEventsService {
         recordedAt: video.recordedAt ? toIso(video.recordedAt) : null,
       },
       rows,
+      rallies: rallyExport,
+      suggestedRallies: suggestedRallyExport,
+      sideSwitches: sideSwitchExport,
+      shots: shotExport,
     };
   }
 
@@ -228,7 +314,11 @@ export class SuggestedShotEventsService {
     const converted: ShotEventDTO[] = [];
 
     for (const sug of eligible) {
-      const result = await this.convertSuggestion(auth, videoId, sug.id, {});
+      const result = await this.convertSuggestion(auth, videoId, sug.id, {
+        rallyId: body.rallyId,
+        playerSlot: body.playerSlot,
+        endsRally: sug.debugMetadata?.endOfRallyLikely ?? undefined,
+      });
       converted.push(result.shot);
     }
 
@@ -260,6 +350,7 @@ export class SuggestedShotEventsService {
         storageBucket: videos.storageBucket,
         storageObjectKey: videos.storageObjectKey,
         durationSeconds: videos.durationSeconds,
+        courtCorners: videos.courtCorners,
       })
       .from(videos)
       .where(and(eq(videos.id, videoId), isNull(videos.deletedAt)))
@@ -298,6 +389,7 @@ export class SuggestedShotEventsService {
         videoId,
         inputPath,
         durationSeconds: video.durationSeconds,
+        courtCorners: video.courtCorners ?? null,
       });
 
       const counts = await this.statsForVideo(auth, videoId);
@@ -356,7 +448,6 @@ export class SuggestedShotEventsService {
     body: ConvertSuggestedShotBody,
   ): Promise<{ shot: ShotEventDTO; suggestion: SuggestedShotEventDTO }> {
     await this.assertVideoOwned(auth, videoId);
-    const userId = await this.users.resolveDbUserId(auth);
     const db = getDb();
 
     const [v] = await db
@@ -386,39 +477,32 @@ export class SuggestedShotEventsService {
     const noteParts = [`From heuristic suggestion ${suggestionId}`];
     if (body.note?.trim()) noteParts.push(body.note.trim());
     const note = noteParts.join(" · ");
+    const rallyId = body.rallyId ?? null;
+    const playerSlot = body.playerSlot ?? null;
+    const endsRally = body.endsRally ?? sug.debugMetadata?.endOfRallyLikely ?? false;
 
-    return await db.transaction(async (tx) => {
-      const [shotRow] = await tx
-        .insert(shotEvents)
-        .values({
-          videoId,
-          rallyId: null,
-          timestampSeconds: sug.timestampSeconds,
-          shotType,
-          side,
-          outcome,
-          note,
-          source: "manual",
-          suggestedShotEventId: suggestionId,
-          createdByUserId: userId,
-        })
-        .returning();
-
-      if (!shotRow) {
-        throw new BadRequestException("Could not create shot event");
-      }
-
-      const [sugUpdated] = await tx
-        .update(suggestedShotEvents)
-        .set({ status: "accepted", updatedAt: sql`now()` })
-        .where(and(eq(suggestedShotEvents.id, suggestionId), eq(suggestedShotEvents.status, "suggested")))
-        .returning();
-
-      if (!sugUpdated) {
-        throw new ConflictException("Suggestion was updated by another request");
-      }
-
-      return { shot: shotEventToDto(shotRow), suggestion: suggestedToDto(sugUpdated) };
+    const shot = await this.shotEvents.createFromSuggestion(auth, videoId, {
+      suggestionId,
+      timestampSeconds: sug.timestampSeconds,
+      shotType,
+      side,
+      outcome,
+      note,
+      rallyId,
+      playerSlot,
+      endsRally,
     });
+
+    const [sugUpdated] = await db
+      .update(suggestedShotEvents)
+      .set({ status: "accepted", updatedAt: sql`now()` })
+      .where(and(eq(suggestedShotEvents.id, suggestionId), eq(suggestedShotEvents.status, "suggested")))
+      .returning();
+
+    if (!sugUpdated) {
+      throw new ConflictException("Suggestion was updated by another request");
+    }
+
+    return { shot, suggestion: suggestedToDto(sugUpdated) };
   }
 }

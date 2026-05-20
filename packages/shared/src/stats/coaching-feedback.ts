@@ -1,5 +1,7 @@
+import type { VideoPlayerSlot } from "../constants/index.js";
 import type { ShotOutcome } from "../constants/index.js";
 import type { RallyConsistencyStatsDTO, ShotEventDTO } from "../types/index.js";
+import { isMistakeOutcome } from "./mistake-outcomes.js";
 import { computeVideoShotStats } from "./video-shot-stats.js";
 
 /** Minimum tagged shots before we show full coaching conclusions. */
@@ -7,12 +9,6 @@ export const COACHING_MIN_TAGS_FOR_FULL_FEEDBACK = 10;
 
 /** Minimum closed rallies before rally consistency is woven into copy. */
 export const COACHING_MIN_CLOSED_RALLIES = 3;
-
-const MISTAKE_OUTCOMES = ["out", "net", "forced_error", "unforced_error"] as const satisfies readonly ShotOutcome[];
-
-function isMistakeOutcome(o: ShotOutcome): boolean {
-  return (MISTAKE_OUTCOMES as readonly string[]).includes(o);
-}
 
 export interface CoachingFeedbackReport {
   /** Fewer than {@link COACHING_MIN_TAGS_FOR_FULL_FEEDBACK} tags — softer copy and generic drills. */
@@ -71,12 +67,16 @@ function ratio(num: number, den: number): number {
  */
 export function computeCoachingFeedback(
   events: readonly ShotEventDTO[],
-  options?: { rallyStats?: RallyConsistencyStatsDTO },
+  options?: { rallyStats?: RallyConsistencyStatsDTO; focusPlayerSlot?: VideoPlayerSlot },
 ): CoachingFeedbackReport {
-  const tagCount = events.length;
+  const focus = options?.focusPlayerSlot;
+  const myEvents =
+    focus != null ? events.filter((e) => e.playerSlot === focus) : events;
+
+  const tagCount = myEvents.length;
   const lowSample = tagCount < COACHING_MIN_TAGS_FOR_FULL_FEEDBACK;
-  const stats = computeVideoShotStats(events);
-  const ctx = aggregateMistakeContext(events);
+  const stats = computeVideoShotStats(myEvents);
+  const ctx = aggregateMistakeContext(myEvents);
 
   const total = stats.totalShots;
   const winners = stats.winners;
@@ -170,9 +170,9 @@ export function computeCoachingFeedback(
 
   let overallSummary: string;
   if (lowSample) {
-    overallSummary = `You have ${tagCount} manual tag${tagCount === 1 ? "" : "s"}. Add at least ${COACHING_MIN_TAGS_FOR_FULL_FEEDBACK} for stronger, rule-based feedback. Below is a light preview from what you logged so far.${rallyLine}`;
+    overallSummary = `You have ${tagCount} tag${tagCount === 1 ? "" : "s"} on your shots. Add at least ${COACHING_MIN_TAGS_FOR_FULL_FEEDBACK} for stronger, rule-based feedback. Below is a light preview from what you logged so far.${rallyLine}`;
   } else {
-    overallSummary = `From ${total} tags: ${winners} winner${winners === 1 ? "" : "s"}, ${mistakeTotal} mistake-class outcome${mistakeTotal === 1 ? "" : "s"}, ${unforced} unforced error${unforced === 1 ? "" : "s"}. This report uses simple thresholds — not opponent modeling.${rallyLine}`;
+    overallSummary = `From ${total} of your Me tags: ${winners} winner${winners === 1 ? "" : "s"}, ${mistakeTotal} mistake-class outcome${mistakeTotal === 1 ? "" : "s"}, ${unforced} unforced error${unforced === 1 ? "" : "s"}. Rule-based feedback from your shots only.${rallyLine}`;
   }
 
   let suggestedNextFocus: string;

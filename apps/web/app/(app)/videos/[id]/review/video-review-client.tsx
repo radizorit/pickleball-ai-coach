@@ -9,7 +9,9 @@ import { useAuthedApiClient } from "@/lib/api/use-authed-api-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RallyConsistencyPanel } from "@/components/rally-consistency-panel";
+import { CourtCornersPanel } from "@/components/court-corners-panel";
 import { RallyPanel } from "@/components/rally-panel";
+import { SuggestedRallyProposals } from "@/components/suggested-rally-proposals";
 import { SuggestedShotsPanel } from "@/components/suggested-shots-panel";
 import { SuggestionReviewQueue } from "@/components/suggestion-review-queue";
 import { VideoCoachingFeedbackPanel } from "@/components/video-coaching-feedback-panel";
@@ -19,6 +21,8 @@ import type {
   SuggestedShotEventDTO,
   VideoDTO,
   VideoPlayerDTO,
+  VideoSideSwitchDTO,
+  SuggestedRallyDTO,
   VideoRallyDTO,
 } from "@pickleball/shared";
 import type { ShotSide, VideoPlayerSlot } from "@pickleball/shared/constants";
@@ -50,9 +54,13 @@ function playerTag(
 ): string | null {
   if (!slot) return null;
   const name = players.find((p) => p.slot === slot)?.displayName?.trim();
-  if (slot === "player_1") return name ? `P1 · ${name}` : "P1";
-  if (slot === "player_2") return name ? `P2 · ${name}` : "P2";
+  if (name) return name;
+  if (slot === "player_1") return "Me";
   return slot;
+}
+
+function meDisplayName(players: VideoPlayerDTO[]): string {
+  return players.find((p) => p.slot === "player_1")?.displayName?.trim() || "Me";
 }
 
 function canRequestSourceRead(status: VideoDTO["processingStatus"]): boolean {
@@ -111,6 +119,18 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     enabled: videoQ.isSuccess && !isYoutube,
   });
 
+  const suggestedRalliesQ = useQuery({
+    queryKey: ["videos", videoId, "suggested-rallies"],
+    queryFn: () => client.videosSuggestedRalliesList(videoId),
+    enabled: videoQ.isSuccess && !isYoutube,
+  });
+
+  const sideSwitchesQ = useQuery({
+    queryKey: ["videos", videoId, "side-switches"],
+    queryFn: () => client.videosSideSwitchesList(videoId),
+    enabled: videoQ.isSuccess,
+  });
+
   const [videoClock, setVideoClock] = useState(0);
   const [manualClock, setManualClock] = useState(0);
   const activeClock = isYoutube ? manualClock : videoClock;
@@ -120,8 +140,11 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const [outcome, setOutcome] = useState<ShotEventDTO["outcome"]>("unknown");
   const [note, setNote] = useState("");
   const [activeRallyId, setActiveRallyId] = useState<string | null>(null);
-  const [playerSlot, setPlayerSlot] = useState<VideoPlayerSlot | null>(null);
   const [endsRally, setEndsRally] = useState(false);
+  const [sideSwitchNotice, setSideSwitchNotice] = useState<string | null>(null);
+
+  const focusPlayerSlot: VideoPlayerSlot = "player_1";
+  const players = playersQ.data ?? [];
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editShotType, setEditShotType] = useState<ShotEventDTO["shotType"]>("unknown");
@@ -129,7 +152,6 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const [editOutcome, setEditOutcome] = useState<ShotEventDTO["outcome"]>("unknown");
   const [editNote, setEditNote] = useState("");
   const [editTs, setEditTs] = useState(0);
-  const [editPlayerSlot, setEditPlayerSlot] = useState<VideoPlayerSlot | null>(null);
   const [editEndsRally, setEditEndsRally] = useState(false);
   const [editRallyId, setEditRallyId] = useState<string | null>(null);
 
@@ -137,12 +159,16 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
   const timelineMax = useMemo(() => {
     const events = eventsQ.data ?? [];
     const allSuggestions = allSuggestionsQ.data ?? [];
+    const proposedRallies = suggestedRalliesQ.data ?? [];
     const maxEv = events.reduce((m, e) => Math.max(m, e.timestampSeconds), 0);
     const maxSug = allSuggestions.reduce((m, s) => Math.max(m, s.timestampSeconds), 0);
-    const base = durationSeconds && durationSeconds > 0 ? durationSeconds : Math.max(maxEv, maxSug);
+    const maxRally = proposedRallies.reduce((m, r) => Math.max(m, r.endTimeSeconds), 0);
+    const base = durationSeconds && durationSeconds > 0 ? durationSeconds : Math.max(maxEv, maxSug, maxRally);
     return Math.max(base || 1, 1);
-  }, [durationSeconds, eventsQ.data, allSuggestionsQ.data]);
+  }, [durationSeconds, eventsQ.data, allSuggestionsQ.data, suggestedRalliesQ.data]);
   const allSuggestions = allSuggestionsQ.data ?? [];
+  const proposedRallies = (suggestedRalliesQ.data ?? []).filter((r) => r.status === "suggested");
+  const confirmedRallies = ralliesQ.data ?? [];
 
   const [focusedSuggestion, setFocusedSuggestion] = useState<SuggestedShotEventDTO | null>(null);
   const [reviewQueueActive, setReviewQueueActive] = useState(false);
@@ -178,6 +204,22 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     },
   });
 
+  const createSideSwitchMut = useMutation({
+    mutationFn: () =>
+      client.videosSideSwitchesCreate(videoId, { timestampSeconds: activeClock }),
+    onSuccess: (sw) => {
+      void qc.invalidateQueries({ queryKey: ["videos", videoId, "side-switches"] });
+      setSideSwitchNotice(`Side switch recorded at ${formatClock(sw.timestampSeconds)}`);
+    },
+  });
+
+  const deleteSideSwitchMut = useMutation({
+    mutationFn: (id: string) => client.sideSwitchesDelete(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["videos", videoId, "side-switches"] });
+    },
+  });
+
   const trainingExportMut = useMutation({
     mutationFn: async () => {
       const data = await client.videosTrainingExport(videoId);
@@ -191,6 +233,26 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     },
   });
 
+  const invalidateAllLabelData = useCallback(() => {
+    invalidateRallyData();
+    void qc.invalidateQueries({ queryKey: ["videos", videoId, "side-switches"] });
+    void qc.invalidateQueries({ queryKey: ["videos", videoId, "suggested-shot-events"] });
+    void qc.invalidateQueries({ queryKey: ["videos", videoId, "suggested-rallies"] });
+    setActiveRallyId(null);
+    setEditingId(null);
+    setSideSwitchNotice(null);
+  }, [invalidateRallyData, qc, videoId]);
+
+  const resetLabelsMut = useMutation({
+    mutationFn: () => client.videosResetLabels(videoId),
+    onSuccess: (summary) => {
+      invalidateAllLabelData();
+      setSideSwitchNotice(
+        `Cleared ${summary.deletedShots} shots, ${summary.deletedRallies} rallies, ${summary.deletedSideSwitches} side switches.`,
+      );
+    },
+  });
+
   const addShot = useCallback(() => {
     const body: CreateShotEventBody = {
       timestampSeconds: activeClock,
@@ -199,7 +261,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
       outcome,
       note: note.trim() === "" ? undefined : note.trim(),
       rallyId: activeRallyId ?? undefined,
-      playerSlot: playerSlot ?? undefined,
+      playerSlot: focusPlayerSlot,
       endsRally: activeRallyId ? endsRally : undefined,
     };
     createMut.mutate(body);
@@ -212,7 +274,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     outcome,
     note,
     activeRallyId,
-    playerSlot,
+    focusPlayerSlot,
     endsRally,
     createMut,
   ]);
@@ -225,13 +287,13 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
         side: partial.side ?? "unknown",
         outcome: partial.outcome ?? "unknown",
         rallyId: activeRallyId ?? undefined,
-        playerSlot: playerSlot ?? undefined,
+        playerSlot: focusPlayerSlot,
         endsRally: activeRallyId ? endsRally : undefined,
       };
       createMut.mutate(body);
       if (endsRally) setEndsRally(false);
     },
-    [activeClock, activeRallyId, playerSlot, endsRally, createMut],
+    [activeClock, activeRallyId, focusPlayerSlot, endsRally, createMut],
   );
 
   useEffect(() => {
@@ -315,7 +377,6 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     setEditOutcome(ev.outcome);
     setEditNote(ev.note ?? "");
     setEditTs(ev.timestampSeconds);
-    setEditPlayerSlot(ev.playerSlot);
     setEditEndsRally(ev.endsRally);
     setEditRallyId(ev.rallyId);
   }, []);
@@ -329,7 +390,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
       outcome: editOutcome,
       note: editNote.trim() === "" ? null : editNote.trim(),
       rallyId: editRallyId,
-      playerSlot: editPlayerSlot,
+      playerSlot: focusPlayerSlot,
       endsRally: editRallyId ? editEndsRally : false,
     };
     updateMut.mutate({ id: editingId, body });
@@ -341,10 +402,30 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     editOutcome,
     editNote,
     editRallyId,
-    editPlayerSlot,
     editEndsRally,
+    focusPlayerSlot,
     updateMut,
   ]);
+
+  const events = eventsQ.data ?? [];
+  const rallies = ralliesQ.data ?? [];
+
+  const rallyIndexById = useMemo(() => {
+    const m = new Map<string, number>();
+    rallies.forEach((r, i) => m.set(r.id, i + 1));
+    return m;
+  }, [rallies]);
+
+  const sideSwitches = sideSwitchesQ.data ?? [];
+
+  const busy =
+    createMut.isPending ||
+    updateMut.isPending ||
+    deleteMut.isPending ||
+    trainingExportMut.isPending ||
+    resetLabelsMut.isPending ||
+    createSideSwitchMut.isPending ||
+    deleteSideSwitchMut.isPending;
 
   if (videoQ.isLoading) {
     return (
@@ -373,19 +454,6 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
     );
   }
 
-  const events = eventsQ.data ?? [];
-  const players = playersQ.data ?? [];
-  const rallies = ralliesQ.data ?? [];
-
-  const rallyIndexById = useMemo(() => {
-    const m = new Map<string, number>();
-    rallies.forEach((r, i) => m.set(r.id, i + 1));
-    return m;
-  }, [rallies]);
-
-  const busy =
-    createMut.isPending || updateMut.isPending || deleteMut.isPending || trainingExportMut.isPending;
-
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -401,15 +469,42 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={() => trainingExportMut.mutate()}
-          >
-            {trainingExportMut.isPending ? "Exporting…" : "Download training export"}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Clear all shots, rallies, side switches, and reset accepted/rejected suggestions on this video? This cannot be undone.",
+                  )
+                ) {
+                  return;
+                }
+                resetLabelsMut.mutate();
+              }}
+            >
+              {resetLabelsMut.isPending ? "Clearing…" : "Clear all labels"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => trainingExportMut.mutate()}
+            >
+              {trainingExportMut.isPending ? "Exporting…" : "Download training export"}
+            </Button>
+          </div>
+          {resetLabelsMut.error && (
+            <p className="text-destructive max-w-xs text-right text-xs">
+              {resetLabelsMut.error instanceof ApiClientError
+                ? resetLabelsMut.error.message
+                : "Reset failed"}
+            </p>
+          )}
           {trainingExportMut.error && (
             <p className="text-destructive max-w-xs text-right text-xs">
               {trainingExportMut.error instanceof ApiClientError
@@ -420,14 +515,26 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
         </div>
       </div>
 
-      <VideoShotStatsPanel videoId={videoId} events={eventsQ.data} isLoading={eventsQ.isLoading} />
+      <VideoShotStatsPanel
+        videoId={videoId}
+        events={eventsQ.data}
+        isLoading={eventsQ.isLoading}
+        focusPlayerSlot={focusPlayerSlot}
+        players={players}
+      />
 
-      <RallyConsistencyPanel videoId={videoId} players={playersQ.data} />
+      <RallyConsistencyPanel
+        videoId={videoId}
+        players={players}
+        focusPlayerSlot={focusPlayerSlot}
+      />
 
       <VideoCoachingFeedbackPanel
         events={eventsQ.data}
         isLoading={eventsQ.isLoading}
         rallyStats={rallyConsistencyQ.data}
+        focusPlayerSlot={focusPlayerSlot}
+        players={players}
       />
 
       {!isYoutube && (
@@ -437,6 +544,8 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
           seekTo={seekTo}
           onQueueActiveChange={setReviewQueueActive}
           onCurrentSuggestionChange={setQueueCurrentSuggestion}
+          activeRallyId={activeRallyId}
+          focusPlayerSlot={focusPlayerSlot}
         />
       )}
 
@@ -504,7 +613,42 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
 
           <div className="bg-muted/40 rounded-lg border p-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Timeline</p>
-            <div className="relative mt-2 h-3 w-full rounded-full bg-muted">
+            <div className="relative mt-2 h-6 w-full rounded-full bg-muted">
+              {confirmedRallies.map((r) => {
+                const left = (r.startTimeSeconds / timelineMax) * 100;
+                const end = r.endTimeSeconds ?? r.startTimeSeconds + 1;
+                const width = Math.max(0.5, ((end - r.startTimeSeconds) / timelineMax) * 100);
+                return (
+                  <button
+                    key={`rally-${r.id}`}
+                    type="button"
+                    title={`Rally ${formatClock(r.startTimeSeconds)} – ${r.endTimeSeconds != null ? formatClock(r.endTimeSeconds) : "open"}`}
+                    className={`absolute top-0 h-full rounded-sm opacity-40 ${activeRallyId === r.id ? "bg-primary opacity-70" : "bg-primary/60"}`}
+                    style={{ left: `${left}%`, width: `${width}%` }}
+                    onClick={() => {
+                      setActiveRallyId(r.id);
+                      seekTo(r.startTimeSeconds);
+                    }}
+                  />
+                );
+              })}
+              {proposedRallies.map((r: SuggestedRallyDTO) => {
+                const left = (r.startTimeSeconds / timelineMax) * 100;
+                const width = Math.max(
+                  0.5,
+                  ((r.endTimeSeconds - r.startTimeSeconds) / timelineMax) * 100,
+                );
+                return (
+                  <button
+                    key={`prop-${r.id}`}
+                    type="button"
+                    title={`Proposed ${formatClock(r.startTimeSeconds)} – ${formatClock(r.endTimeSeconds)}`}
+                    className="border-amber-500/80 absolute top-0 h-full rounded-sm border border-dashed bg-amber-500/20"
+                    style={{ left: `${left}%`, width: `${width}%` }}
+                    onClick={() => seekTo(r.startTimeSeconds)}
+                  />
+                );
+              })}
               {allSuggestions.map((s) => {
                 const pct = Math.min(100, (s.timestampSeconds / timelineMax) * 100);
                 const title = `${s.status} ${formatClock(s.timestampSeconds)} · ${Math.round(s.confidence * 100)}%`;
@@ -544,6 +688,19 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
                   />
                 );
               })}
+              {sideSwitches.map((sw: VideoSideSwitchDTO) => {
+                const pct = Math.min(100, (sw.timestampSeconds / timelineMax) * 100);
+                return (
+                  <button
+                    key={`sw-${sw.id}`}
+                    type="button"
+                    title={`Side switch ${formatClock(sw.timestampSeconds)}${sw.note ? ` · ${sw.note}` : ""}`}
+                    className="bg-amber-500 ring-background absolute top-0 h-full w-0.5 -translate-x-1/2 rounded-sm ring-1 hover:bg-amber-400"
+                    style={{ left: `${pct}%` }}
+                    onClick={() => seekTo(sw.timestampSeconds)}
+                  />
+                );
+              })}
               {events.map((ev) => (
                 <button
                   key={ev.id}
@@ -559,6 +716,14 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
         </div>
 
         <div className="w-full shrink-0 space-y-4 lg:w-[380px]">
+          {!isYoutube && v && <CourtCornersPanel video={v} />}
+          {!isYoutube && (
+            <SuggestedRallyProposals
+              videoId={videoId}
+              seekTo={seekTo}
+              onRallyAccepted={setActiveRallyId}
+            />
+          )}
           <RallyPanel
             videoId={videoId}
             activeClock={activeClock}
@@ -569,9 +734,64 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Tagging</CardTitle>
-              <CardDescription>Active clock: {formatClock(activeClock)}</CardDescription>
+              <CardDescription>
+                Me-only gold labels — see{" "}
+                <Link href="/gold-label-rules" className="text-primary underline underline-offset-2">
+                  gold label rules
+                </Link>
+                . Active clock: {formatClock(activeClock)}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
+              {sideSwitches.length > 0 && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-900 dark:text-amber-200">
+                  Me stays player_1 after side changes. Mark every end switch with{" "}
+                  <strong>Switched ends</strong>.
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => createSideSwitchMut.mutate()}
+                >
+                  Switched ends
+                </Button>
+                <span className="text-muted-foreground text-xs">
+                  Tagging as {meDisplayName(players)} (player_1)
+                </span>
+              </div>
+              {sideSwitchNotice && (
+                <p className="text-emerald-700 dark:text-emerald-400 text-xs">{sideSwitchNotice}</p>
+              )}
+              {sideSwitches.length > 0 && (
+                <ul className="space-y-1 text-xs">
+                  {sideSwitches.map((sw) => (
+                    <li key={sw.id} className="flex items-center justify-between gap-2 rounded border px-2 py-1">
+                      <button
+                        type="button"
+                        className="text-left hover:underline"
+                        onClick={() => seekTo(sw.timestampSeconds)}
+                      >
+                        {formatClock(sw.timestampSeconds)}
+                        {sw.note ? ` · ${sw.note}` : ""}
+                      </button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive h-7 px-2"
+                        disabled={busy}
+                        onClick={() => deleteSideSwitchMut.mutate(sw.id)}
+                      >
+                        Delete
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {isYoutube && (
                 <div className="space-y-1">
                   <label className="font-medium" htmlFor="manual-clock">
@@ -633,22 +853,6 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
                   ))}
                 </select>
               </div>
-              <div className="grid gap-2">
-                <label className="font-medium">Player</label>
-                <div className="flex gap-2">
-                  {(["player_1", "player_2"] as const).map((slot) => (
-                    <Button
-                      key={slot}
-                      type="button"
-                      size="sm"
-                      variant={playerSlot === slot ? "default" : "outline"}
-                      onClick={() => setPlayerSlot(playerSlot === slot ? null : slot)}
-                    >
-                      {slot === "player_1" ? "P1" : "P2"}
-                    </Button>
-                  ))}
-                </div>
-              </div>
               {activeRallyId && (
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -690,6 +894,8 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
               seekTo={seekTo}
               onFocusChange={setFocusedSuggestion}
               disableShortcuts={reviewQueueActive}
+              activeRallyId={activeRallyId}
+              playerSlot={focusPlayerSlot}
             />
           )}
 
@@ -761,21 +967,7 @@ export function VideoReviewClient({ videoId }: { videoId: string }) {
                           ))}
                         </select>
                       </div>
-                      <div className="flex gap-1">
-                        {(["player_1", "player_2"] as const).map((slot) => (
-                          <Button
-                            key={slot}
-                            type="button"
-                            size="sm"
-                            variant={editPlayerSlot === slot ? "default" : "outline"}
-                            onClick={() =>
-                              setEditPlayerSlot(editPlayerSlot === slot ? null : slot)
-                            }
-                          >
-                            {slot === "player_1" ? "P1" : "P2"}
-                          </Button>
-                        ))}
-                      </div>
+                      <p className="text-muted-foreground text-xs">Player: {meDisplayName(players)} (player_1)</p>
                       <select
                         value={editRallyId ?? ""}
                         onChange={(e) =>

@@ -141,6 +141,12 @@ export function VideoDetailClient({ videoId }: { videoId: string }) {
     enabled: q.isSuccess,
   });
 
+  const playersQ = useQuery({
+    queryKey: ["videos", videoId, "players"],
+    queryFn: () => client.videosPlayersList(videoId),
+    enabled: q.isSuccess,
+  });
+
   if (q.isLoading) {
     return (
       <div className="space-y-4">
@@ -215,9 +221,16 @@ export function VideoDetailClient({ videoId }: { videoId: string }) {
         events={shotEventsQ.data}
         isLoading={shotEventsQ.isLoading}
         showReviewLink
+        focusPlayerSlot={v.focusPlayerSlot ?? "player_1"}
+        players={playersQ.data}
       />
 
-      <VideoCoachingFeedbackPanel events={shotEventsQ.data} isLoading={shotEventsQ.isLoading} />
+      <VideoCoachingFeedbackPanel
+        events={shotEventsQ.data}
+        isLoading={shotEventsQ.isLoading}
+        focusPlayerSlot={v.focusPlayerSlot ?? "player_1"}
+        players={playersQ.data}
+      />
 
       <Card>
         <CardHeader>

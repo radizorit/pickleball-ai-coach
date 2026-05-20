@@ -1,7 +1,15 @@
 import { sql } from "drizzle-orm";
-import { bigint, index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
-import { matchTypeEnum, processingStatusEnum, videoPrivacyEnum } from "./enums.js";
+/** Normalized court corners for ROI (0–1), order: near-left, near-right, far-right, far-left. */
+export type VideoCourtCorners = [
+  { x: number; y: number },
+  { x: number; y: number },
+  { x: number; y: number },
+  { x: number; y: number },
+];
+
+import { matchTypeEnum, processingStatusEnum, videoPlayerSlotEnum, videoPrivacyEnum } from "./enums.js";
 import { organizations } from "./organizations.js";
 import { users } from "./users.js";
 
@@ -40,6 +48,9 @@ export const videos = pgTable(
     failureMessage: text("failure_message"),
     privacy: videoPrivacyEnum("privacy").notNull().default("private"),
     matchType: matchTypeEnum("match_type"),
+    courtCorners: jsonb("court_corners").$type<VideoCourtCorners | null>(),
+    /** Solo analysis subject (convention: player_1 = Me). */
+    focusPlayerSlot: videoPlayerSlotEnum("focus_player_slot").notNull().default("player_1"),
     recordedAt: timestamp("recorded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

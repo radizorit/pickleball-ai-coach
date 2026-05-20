@@ -6,3 +6,5 @@ export * from "./video-players.js";
 export * from "./rallies.js";
 export * from "./shot-events.js";
 export * from "./suggested-shot-events.js";
+export * from "./suggested-rallies.js";
+export * from "./video-side-switches.js";

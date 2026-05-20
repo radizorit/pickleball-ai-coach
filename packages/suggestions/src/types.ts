@@ -18,6 +18,9 @@ export type FusedSuggestion = {
     audioPeak?: number;
     motionScore?: number;
     signalWeights: { scene: number; audio: number; motion: number };
+    kind?: "contact" | "rally_start" | "rally_end";
+    proposedRallyIndex?: number;
+    endOfRallyLikely?: boolean;
   };
 };
 

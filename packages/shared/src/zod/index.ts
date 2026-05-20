@@ -142,9 +142,32 @@ export const zVideoDTO = z.object({
   failureMessage: z.string().nullable(),
   privacy: zVideoPrivacy,
   matchType: zMatchType.nullable(),
+  courtCorners: z
+    .tuple([
+      z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+      z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+      z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+      z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+    ])
+    .nullable(),
+  focusPlayerSlot: zVideoPlayerSlot,
   recordedAt: zIsoDateTime.nullable(),
   createdAt: zIsoDateTime,
   updatedAt: zIsoDateTime,
+});
+
+/** `PATCH /v1/videos/:id` — update video metadata (solo: focus player). */
+export const zPatchVideoBody = z.object({
+  focusPlayerSlot: zVideoPlayerSlot.optional(),
+});
+export type PatchVideoBody = z.infer<typeof zPatchVideoBody>;
+
+export const zVideoResetLabelsSummaryDTO = z.object({
+  deletedShots: z.number().int().nonnegative(),
+  deletedRallies: z.number().int().nonnegative(),
+  deletedSideSwitches: z.number().int().nonnegative(),
+  resetShotSuggestions: z.number().int().nonnegative(),
+  resetRallySuggestions: z.number().int().nonnegative(),
 });
 export const zVideoPresignedUploadDTO = z.object({
   upload: z.object({
@@ -360,6 +383,8 @@ export type SuggestedShotStatsDTOValidated = z.infer<typeof zSuggestedShotStatsD
 
 export const zConvertSuggestedShotBatchBody = z.object({
   minConfidence: z.number().min(0).max(1),
+  rallyId: zUuid.nullable().optional(),
+  playerSlot: zVideoPlayerSlot.nullable().optional(),
 });
 export type ConvertSuggestedShotBatchBody = z.infer<typeof zConvertSuggestedShotBatchBody>;
 
@@ -375,11 +400,56 @@ export const zConvertSuggestedShotBody = z.object({
   side: zShotSide.optional(),
   outcome: zShotOutcome.optional(),
   note: z.string().max(2000).nullable().optional(),
+  rallyId: zUuid.nullable().optional(),
+  playerSlot: zVideoPlayerSlot.nullable().optional(),
+  endsRally: z.boolean().optional(),
+});
+
+/** `PUT /v1/videos/:id/court-corners` */
+export const zUpsertCourtCornersBody = z.object({
+  courtCorners: z
+    .tuple([
+      z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+      z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+      z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+      z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
+    ])
+    .nullable(),
+});
+export type UpsertCourtCornersBody = z.infer<typeof zUpsertCourtCornersBody>;
+
+export const zSuggestedRallyDTO = z.object({
+  id: zUuid,
+  videoId: zUuid,
+  proposalIndex: z.number().int().nonnegative(),
+  startTimeSeconds: z.number(),
+  endTimeSeconds: z.number(),
+  confidence: z.number().min(0).max(1),
+  status: zSuggestedShotStatus,
+  createdAt: zIsoDateTime,
+  updatedAt: zIsoDateTime,
 });
 export type ConvertSuggestedShotBody = z.infer<typeof zConvertSuggestedShotBody>;
 
 export const zSuggestedShotListFilter = z.union([zSuggestedShotStatus, z.literal("all")]);
 export type SuggestedShotListFilterValidated = z.infer<typeof zSuggestedShotListFilter>;
+
+export const zVideoSideSwitchDTO = z.object({
+  id: zUuid,
+  videoId: zUuid,
+  timestampSeconds: z.number().nonnegative().max(864_000),
+  note: z.string().nullable(),
+  segmentIndex: z.number().int().nonnegative().nullable(),
+  createdAt: zIsoDateTime,
+});
+export type VideoSideSwitchDTOValidated = z.infer<typeof zVideoSideSwitchDTO>;
+
+/** `POST /v1/videos/:id/side-switches` */
+export const zCreateVideoSideSwitchBody = z.object({
+  timestampSeconds: z.number().nonnegative().max(864_000),
+  note: z.string().max(500).nullable().optional(),
+});
+export type CreateVideoSideSwitchBody = z.infer<typeof zCreateVideoSideSwitchBody>;
 
 export const zVideoTrainingExportVideoMeta = z.object({
   videoId: zUuid,
@@ -410,12 +480,65 @@ export const zVideoTrainingExportRow = z.object({
   confirmedSide: zShotSide.nullable(),
   confirmedOutcome: zShotOutcome.nullable(),
   pipelineVersion: z.string().nullable(),
+  debugKind: z.string().nullable().optional(),
+  proposedRallyIndex: z.number().int().nullable().optional(),
+  endOfRallyLikely: z.boolean().nullable().optional(),
 });
 
 export const zVideoTrainingExportDTO = z.object({
-  schemaVersion: z.literal("1"),
+  schemaVersion: z.union([z.literal("1"), z.literal("2"), z.literal("3")]),
   exportedAt: zIsoDateTime,
   video: zVideoTrainingExportVideoMeta,
   rows: z.array(zVideoTrainingExportRow),
+  rallies: z
+    .array(
+      z.object({
+        rallyId: zUuid,
+        startTimeSeconds: z.number(),
+        endTimeSeconds: z.number().nullable(),
+        winningPlayerSlot: zVideoPlayerSlot.nullable(),
+        endReason: zRallyEndReason.nullable(),
+        shotCount: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
+  suggestedRallies: z
+    .array(
+      z.object({
+        suggestedRallyId: zUuid,
+        proposalIndex: z.number().int(),
+        startTimeSeconds: z.number(),
+        endTimeSeconds: z.number(),
+        confidence: z.number(),
+        status: zSuggestedShotStatus,
+        acceptedRallyId: zUuid.nullable(),
+      }),
+    )
+    .optional(),
+  sideSwitches: z
+    .array(
+      z.object({
+        id: zUuid,
+        timestampSeconds: z.number(),
+        note: z.string().nullable(),
+        segmentIndex: z.number().int().nullable(),
+      }),
+    )
+    .optional(),
+  shots: z
+    .array(
+      z.object({
+        shotEventId: zUuid,
+        timestampSeconds: z.number(),
+        rallyId: zUuid.nullable(),
+        playerSlot: zVideoPlayerSlot.nullable(),
+        shotIndexInRally: z.number().int().nullable(),
+        endsRally: z.boolean(),
+        shotType: zShotType,
+        side: zShotSide,
+        outcome: zShotOutcome,
+      }),
+    )
+    .optional(),
 });
 export type VideoTrainingExportDTOValidated = z.infer<typeof zVideoTrainingExportDTO>;

@@ -1,7 +1,7 @@
 import { ApiProperty } from "@nestjs/swagger";
 
-import { PROCESSING_STATUSES, VIDEO_PRIVACY } from "@pickleball/shared/constants";
-import type { VideoDTO, VideoPresignedReadDTO } from "@pickleball/shared";
+import { PROCESSING_STATUSES, VIDEO_PLAYER_SLOTS, VIDEO_PRIVACY } from "@pickleball/shared/constants";
+import type { VideoDTO, VideoPresignedReadDTO, VideoResetLabelsSummaryDTO } from "@pickleball/shared";
 
 export class VideoResponseDto implements VideoDTO {
   @ApiProperty({ type: String, format: "uuid" })
@@ -71,6 +71,20 @@ export class VideoResponseDto implements VideoDTO {
   @ApiProperty({ type: String, nullable: true })
   matchType!: VideoDTO["matchType"];
 
+  @ApiProperty({
+    type: "array",
+    nullable: true,
+    description: "Normalized court quad for ROI masking (4 corners).",
+    items: {
+      type: "object",
+      properties: { x: { type: "number" }, y: { type: "number" } },
+    },
+  })
+  courtCorners!: VideoDTO["courtCorners"];
+
+  @ApiProperty({ enum: VIDEO_PLAYER_SLOTS, description: "Solo analysis subject (player_1 = Me)." })
+  focusPlayerSlot!: VideoDTO["focusPlayerSlot"];
+
   @ApiProperty({ type: String, format: "date-time", nullable: true })
   recordedAt!: string | null;
 
@@ -108,4 +122,21 @@ export class VideoPresignedReadResponseDto implements VideoPresignedReadDTO {
 
   @ApiProperty({ type: String, format: "date-time" })
   expiresAt!: string;
+}
+
+export class VideoResetLabelsSummaryResponseDto implements VideoResetLabelsSummaryDTO {
+  @ApiProperty({ type: Number })
+  deletedShots!: number;
+
+  @ApiProperty({ type: Number })
+  deletedRallies!: number;
+
+  @ApiProperty({ type: Number })
+  deletedSideSwitches!: number;
+
+  @ApiProperty({ type: Number })
+  resetShotSuggestions!: number;
+
+  @ApiProperty({ type: Number })
+  resetRallySuggestions!: number;
 }
